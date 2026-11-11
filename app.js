@@ -104,12 +104,19 @@ const fullTime = ms => fmt(ms, {weekday:'short', month:'short', day:'numeric', h
 const clock = ms => fmt(ms, {hour:'numeric', minute:'2-digit', timeZoneName:'short'});
 const book = b => BOOKS[String(b || '').toLowerCase().replace(/[^a-z0-9]/g, '')] || b || '';
 const team = t => { const x = TEAMS[String(t || '').toUpperCase()]; return {code: t || '', name: x ? x[0] : (t || ''), color: x ? x[1] : '#2A3846'}; };
-const logoUrl = t => { const c = String(t || '').toLowerCase(); return c ? 'https://a.espncdn.com/i/teamlogos/nfl/500/' + (c === 'was' ? 'wsh' : c) + '.png' : ''; };
+// ESPN's dark-background logo set first; the standard logo if a dark one is missing.
+const logoCode = t => { const c = String(t || '').toLowerCase(); return c === 'was' ? 'wsh' : c; };
+const logoUrl = t => t ? 'https://a.espncdn.com/i/teamlogos/nfl/500-dark/' + logoCode(t) + '.png' : '';
+const logoUrlStd = t => t ? 'https://a.espncdn.com/i/teamlogos/nfl/500/' + logoCode(t) + '.png' : '';
+window.logoErr = function (im, fb) {
+  if (im.src.indexOf('/500-dark/') >= 0) { im.src = im.src.replace('/500-dark/', '/500/'); return; }
+  if (fb) { const t = team(fb), px = im.getAttribute('data-px') || 24; im.outerHTML = '<span class="lfb" style="width:' + px + 'px;height:' + px + 'px;background:' + t.color + '">' + esc(t.code) + '</span>'; }
+  else im.remove();
+};
 function logo(t, size) {
   const tm = team(t), px = {xs:20, sm:24, md:30, lg:64}[size] || 24;
   if (!t) return '';
-  return '<img class="logo ' + size + '" src="' + esc(logoUrl(t)) + '" alt="' + esc(tm.code) + '" loading="lazy" ' +
-    'onerror="this.outerHTML=\'<span class=&quot;lfb&quot; style=&quot;width:' + px + 'px;height:' + px + 'px;background:' + tm.color + '&quot;>' + esc(tm.code) + '</span>\'">';
+  return '<img class="logo ' + size + '" src="' + esc(logoUrl(t)) + '" alt="' + esc(tm.code) + '" loading="lazy" data-px="' + px + '" onerror="logoErr(this,\'' + esc(tm.code) + '\')">';
 }
 const SIL = '<svg width="100" height="112" viewBox="0 0 100 112" aria-hidden="true"><circle cx="50" cy="40" r="23" fill="rgba(232,238,242,.22)"/><path d="M6 112c2-29 20-43 44-43s42 14 44 43z" fill="rgba(232,238,242,.22)"/></svg>';
 const STAR = '<svg class="star" width="14" height="14" viewBox="0 0 24 24" role="img" aria-label="S1 Highlight"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" fill="#E8B64C"/></svg>';
@@ -254,13 +261,48 @@ function sleeperFor(p, tm) {
 function cut(p, tm, fb, size) {
   const t = team(tm), src = espnFor(p, tm), f = fb || sleeperFor(p, tm);
   const img = src ? '<img src="' + esc(src) + '" alt=""' + (f ? ' data-fb="' + esc(f) + '"' : '') + ' loading="lazy" onerror="cutErr(this)">'
-    : f ? '<img class="sq" src="' + esc(f) + '" alt="" loading="lazy" onerror="cutErr(this)">' : SIL_CUT;
-  return '<span class="cut ' + (size || '') + '"><span class="tile" style="background:linear-gradient(180deg,' + t.color + ',' + t.color + '38)"></span>' + img + '</span>';
+    : f ? '<img class="sq" src="' + esc(f) + '" alt="" loading="lazy" onerror="cutErr(this)">' : cutLogo(tm);
+  return '<span class="cut ' + (size || '') + '" data-tm="' + esc(tm || '') + '"><span class="tile" style="background:linear-gradient(180deg,' + t.color + ',' + t.color + '38)"></span>' + img + '</span>';
 }
+const cutLogo = tm => '<img class="lgf" src="' + esc(logoUrl(tm)) + '" alt="" loading="lazy" onerror="logoErr(this)">';
 window.cutErr = function (im) {
   const fb = im.getAttribute('data-fb');
-  if (fb) { im.removeAttribute('data-fb'); im.classList.add('sq'); im.src = fb; } else im.outerHTML = SIL_CUT;
+  if (fb) { im.removeAttribute('data-fb'); im.classList.add('sq'); im.src = fb; return; }
+  const box = im.closest('.cut'), tm = box && box.getAttribute('data-tm');
+  im.outerHTML = tm ? cutLogo(tm) : SIL_CUT;
 };
+/* Team-logo tile, used in place of a small headshot on Today. */
+function tlogo(tm, size) {
+  const t = team(tm);
+  return '<span class="tlg ' + (size || '') + '" style="background:linear-gradient(180deg,' + t.color + '66,' + t.color + '14)"><img src="' + esc(logoUrl(tm)) + '" alt="' + esc(t.code) + '" loading="lazy" onerror="logoErr(this)"></span>';
+}
+/* Official grades for this week's V3 straights (from the locked tracked rows). */
+const GRADE = {WIN: 'W', LOSS: 'L', VOID: 'V', PUSH: 'P'};
+let GMAP = null, GCORE = null;
+function gradeOf(p, dr, ln, m) {
+  if (GCORE !== S.core) {
+    GCORE = S.core; GMAP = {};
+    const wk = S.core.meta.week;
+    (S.core.tracked || []).forEach(r => { if (r[0] === wk && GRADE[r[16]]) GMAP[nkey(r[5]) + '|' + U(r[6]) + '|' + r[7] + '|' + U(r[8])] = {g: GRADE[r[16]], a: r[17]}; });
+  }
+  return GMAP[nkey(p) + '|' + U(dr) + '|' + ln + '|' + U(m)] || null;
+}
+/* Result or live status shown next to a pick on Today. */
+const gradeChip = (g, a) => GRADED[g] ? '<span class="lvchip ' + GRADED[g][1] + '">' + (isNum(a) ? esc(a) + ' · ' : '') + GRADED[g][0] + '</span>' : '';
+function rowStatus(pk, e, g, a) {
+  if (g) return gradeChip(g, a);
+  const lg = liveGame(gameOf(e));
+  if (!lg || lg.state === 'pre') return '';
+  const pr = progress(pk, lg);
+  return '<span class="lvchip ' + pr.cls + '">' + (pr.cur === null ? '' : esc(pr.cur) + ' · ') + esc(pr.status) + '</span>';
+}
+function ticketStatus(x) {
+  if (x.res) return gradeChip(x.res);
+  const pr = x.legs.map(l => { const lg = liveGame(gameOf(l.e)); return lg && lg.state !== 'pre' ? progress(Object.assign({dr: 'OVER'}, l), lg).cls : (l.g === 'W' ? 'hit' : l.g === 'L' ? 'miss' : 'wait'); });
+  if (pr.every(c => c === 'wait')) return '';
+  const hit = pr.filter(c => c === 'hit').length;
+  return pr.indexOf('miss') >= 0 ? '<span class="lvchip miss">Lost</span>' : '<span class="lvchip ' + (hit === pr.length ? 'hit' : 'pace') + '">' + hit + ' of ' + pr.length + ' hit</span>';
+}
 
 /* ---- this week's picks, every list, as one set of items ---- */
 const KIND = {bet: ['Bet', 'k-bet'], lean: ['Lean', 'k-lean'], top: ['Top 10', 'k-top'], par: ['Parlay', 'k-par'], sgp: ['SGP', 'k-sgp']};
@@ -285,20 +327,21 @@ function tdRow(it) {
   const chip = '<span class="kchip ' + KIND[it.kind][1] + '">' + KIND[it.kind][0] + '</span>';
   if (it.c) {
     const c = it.c;
-    return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + c.p) + '"' + pcAttrs(c.pid, c.m, c.dr, it.k) + '>' + cut(c.p, c.tm, c.hs) +
-      '<div class="td-mid"><div class="td-nm"><b>' + esc(c.p) + '</b>' + chip + '</div><div class="td-ln">' + esc(propLabel(c)) + ' · ' + esc([c.pos, book(c.bk)].filter(Boolean).join(' · ')) + '</div></div>' +
+    return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + c.p) + '"' + pcAttrs(c.pid, c.m, c.dr, it.k) + '>' + tlogo(c.tm) +
+      '<div class="td-mid"><div class="td-nm"><b>' + esc(c.p) + '</b>' + chip + rowStatus(c, c.e, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).g, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).a) + '</div><div class="td-ln">' + esc(propLabel(c)) + ' · ' + esc([c.pos, book(c.bk)].filter(Boolean).join(' · ')) + '</div></div>' +
       '<div class="td-r"><b>' + odd(c.o) + '</b><span>V3 ' + pct(c.hp, 0) + '</span></div></div>';
   }
   if (it.s) {
     const s = it.s;
-    return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + s.p) + '"' + pcAttrs(s.pid, s.m, 'OVER', '') + '>' + cut(s.p, s.tm) +
-      '<div class="td-mid"><div class="td-nm"><b>' + esc(s.p) + '</b>' + chip + (s.g ? lrRes(s.g) : '') + '</div><div class="td-ln">#' + (it.i + 1) + ' · ' + esc(lrMarket(s)) + ' · ' + esc(s.pos || '') + '</div></div>' +
+    return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + s.p) + '"' + pcAttrs(s.pid, s.m, 'OVER', '') + '>' + tlogo(s.tm) +
+      '<div class="td-mid"><div class="td-nm"><b>' + esc(s.p) + '</b>' + chip + rowStatus(Object.assign({dr: 'OVER'}, s), s.e, s.g, s.a) + '</div><div class="td-ln">#' + (it.i + 1) + ' · ' + esc(lrMarket(s)) + ' · ' + esc(s.pos || '') + '</div></div>' +
       '<div class="td-r"><b>' + odd(s.o) + '</b><span>Score ' + esc(Math.round(s.score)) + '</span></div></div>';
   }
   const x = it.x, D = ticketDec(x), sg = it.kind === 'sgp', price = sg ? 1 + (D - 1) * 0.9 : D;
-  const faces = '<span class="td-faces">' + x.legs.slice(0, 3).map(l => cut(l.p, l.tm, '', 'sm')).join('') + '</span>';
+  const tms = x.legs.map(l => l.tm).filter((t, i, a) => t && a.indexOf(t) === i).slice(0, 3);
+  const faces = '<span class="td-faces">' + tms.map(t => tlogo(t, 'sm')).join('') + '</span>';
   const locked = x.legs.some(l => l.locked);
-  const inner = faces + '<div class="td-mid"><div class="td-nm"><b>' + esc(sg ? 'Same-game parlay' : x.legs.map(l => surname(l.p)).join(' + ')) + '</b>' + chip + (x.res ? lrRes(x.res) : '') + '</div>' +
+  const inner = faces + '<div class="td-mid"><div class="td-nm"><b>' + esc(sg ? 'Same-game parlay' : x.legs.map(l => surname(l.p)).join(' + ')) + '</b>' + chip + ticketStatus(x) + '</div>' +
     '<div class="td-ln">' + esc(x.legs.map(legShort).join(' · ')) + '</div></div>' +
     '<div class="td-r"><b>' + odd(amOf(price)) + '</b><span>' + (sg ? 'est. book' : x.legs.length + ' legs') + '</span></div>';
   return locked ? '<div class="td-row">' + inner + '</div>'
@@ -318,7 +361,7 @@ function tdHero(items) {
   const attrs = top.c ? pcAttrs(o.pid, o.m, o.dr, top.k) : pcAttrs(o.pid, o.m, 'OVER', '');
   const g = gameOf(o.e), meta = [o.pos, o.tm, o.op ? 'vs ' + o.op : '', g ? dayTime(g.t) : ''].filter(Boolean).join(' · ');
   return '<section class="td-hero pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + o.p) + '"' + attrs + ' style="background:linear-gradient(115deg,' + t.color + ' 0%,' + t.color + '99 30%,var(--bg2) 78%)">' +
-    '<img class="td-wm" src="' + esc(logoUrl(o.tm)) + '" alt="" loading="lazy" onerror="this.remove()">' +
+    (espnFor(o.p, o.tm) || (top.c && o.hs) || sleeperFor(o.p, o.tm) ? '<img class="td-wm" src="' + esc(logoUrl(o.tm)) + '" alt="" loading="lazy" onerror="logoErr(this)">' : '') +
     cut(o.p, o.tm, top.c ? o.hs : '', 'lg') +
     '<div class="td-hb"><span class="kchip ' + (isTop ? 'k-top' : 'k-bet') + '">' + (isTop ? 'Top 10 · #1 this week' : 'Top V3 bet') + '</span>' +
     '<div class="td-hn">' + esc(o.p) + '</div><div class="td-hm">' + esc(meta) + '</div>' +
@@ -403,7 +446,15 @@ function statFor(m, st) {
   if (M === 'RUSH + REC YARDS' || M === 'RUSHING + RECEIVING YARDS') return z(s.ry) + z(s.rcy);
   return null;
 }
+const GRADED = {W: ['Won', 'hit'], L: ['Lost', 'miss'], V: ['Void', 'wait'], P: ['Push', 'wait']};
 function progress(pk, lg) {
+  const pr = progressLive(pk, lg), G = GRADED[pk.g];
+  if (!G) return pr;
+  if (pr.cur === null && isNum(pk.a)) { pr.cur = pk.a; const ln = U(pk.dr) === 'YES' || U(pk.dr) === 'NO' ? 0.5 : pk.ln, sc = Math.max((Math.floor(ln) + 1) * 1.3, pk.a * 1.05, 1); pr.fill = Math.min(1, pk.a / sc); pr.tick = Math.min(1, ln / sc); pr.left = 'Graded'; }
+  pr.status = G[0]; pr.cls = G[1]; pr.right = 'Final';
+  return pr;
+}
+function progressLive(pk, lg) {
   const st = livePlayer(pk.p, pk.tm), cur = statFor(pk.m, st) ?? (lg && lg.state !== 'pre' ? 0 : null);
   const D = U(pk.dr), over = D === 'OVER' || D === 'YES', ln = D === 'YES' || D === 'NO' ? 0.5 : pk.ln;
   if (!lg || lg.state === 'pre' || cur === null || !isNum(ln)) return {status: 'Not started', cls: 'wait', cur: null, fill: 0, tick: 0, left: lg ? dayTime(lg.t) : '', right: ''};
@@ -431,10 +482,10 @@ function progress(pk, lg) {
 function trackedIn(eid) {
   const out = [];
   weekItems().forEach(function (it) {
-    if (it.c && it.e === eid) out.push({p: it.c.p, tm: it.c.tm, pid: it.c.pid, m: it.c.m, dr: it.c.dr, ln: it.c.ln, o: it.c.o, kind: it.kind, k: it.k});
-    if (it.s && it.e === eid) out.push({p: it.s.p, tm: it.s.tm, pid: it.s.pid, m: it.s.m, dr: 'OVER', ln: it.s.ln, o: it.s.o, kind: 'top', rank: it.i + 1});
-    if (it.x && it.kind === 'sgp' && it.e === eid) it.x.legs.forEach(l => out.push({p: l.p, tm: l.tm, pid: l.pid, m: l.m, dr: 'OVER', ln: l.ln, o: l.o, kind: 'sgp'}));
-    if (it.x && it.kind === 'par') it.x.legs.forEach(l => { if (l.e === eid) out.push({p: l.p, tm: l.tm, pid: l.pid, m: l.m, dr: 'OVER', ln: l.ln, o: l.o, kind: 'par'}); });
+    if (it.c && it.e === eid) { const gr = gradeOf(it.c.p, it.c.dr, it.c.ln, it.c.m) || {}; out.push({p: it.c.p, tm: it.c.tm, pid: it.c.pid, m: it.c.m, dr: it.c.dr, ln: it.c.ln, o: it.c.o, kind: it.kind, k: it.k, g: gr.g, a: gr.a}); }
+    if (it.s && it.e === eid) out.push({p: it.s.p, tm: it.s.tm, pid: it.s.pid, m: it.s.m, dr: 'OVER', ln: it.s.ln, o: it.s.o, kind: 'top', rank: it.i + 1, g: it.s.g, a: it.s.a});
+    if (it.x && it.kind === 'sgp' && it.e === eid) it.x.legs.forEach(l => out.push({p: l.p, tm: l.tm, pid: l.pid, m: l.m, dr: 'OVER', ln: l.ln, o: l.o, kind: 'sgp', g: l.g, a: l.a}));
+    if (it.x && it.kind === 'par') it.x.legs.forEach(l => { if (l.e === eid) out.push({p: l.p, tm: l.tm, pid: l.pid, m: l.m, dr: 'OVER', ln: l.ln, o: l.o, kind: 'par', g: l.g, a: l.a}); });
   });
   S.slip.forEach(l => { if (l.e === eid) out.push({p: l.p, tm: l.tm, pid: l.pid, m: l.m, dr: l.dr, ln: l.ln, o: Number(String(l.o).replace('−', '-')), kind: 'slip'}); });
   const seen = {};
@@ -443,7 +494,7 @@ function trackedIn(eid) {
 const KIND2 = Object.assign({slip: ['My parlay', 'k-par']}, KIND);
 function liveRow(pk, lg, compact) {
   const pr = progress(pk, lg), label = KIND2[pk.kind][0] + (pk.rank ? ' #' + pk.rank : '');
-  return '<div class="lv-pick' + (compact ? ' sm' : '') + '"><div class="lv-top">' + cut(pk.p, pk.tm, '', compact ? 'sm' : 'md') +
+  return '<div class="lv-pick' + (compact ? ' sm' : '') + '"><div class="lv-top">' + cut(pk.p, pk.tm, '', 'md') +
     '<div class="td-mid"><div class="td-nm"><b>' + esc(pk.p) + '</b></div><div class="td-ln">' + esc(label + ' · ' + propLabel(pk)) + '</div></div>' +
     '<div class="lv-now"><b>' + (pr.cur === null ? '—' : esc(pr.cur)) + '</b><span class="lv-st ' + pr.cls + '">' + esc(pr.status) + '</span></div></div>' +
     '<div class="lv-bar"><i class="' + pr.cls + '" style="width:' + (pr.fill * 100).toFixed(1) + '%"></i>' + (pr.cls === 'wait' ? '' : '<em style="left:' + (pr.tick * 100).toFixed(1) + '%"></em>') + '</div>' +
@@ -451,7 +502,7 @@ function liveRow(pk, lg, compact) {
 }
 function liveMini(pk, lg) {
   const pr = progress(pk, lg), label = KIND2[pk.kind][0] + (pk.rank ? ' #' + pk.rank : '');
-  return '<div class="lv-mini">' + cut(pk.p, pk.tm, '', 'sm') + '<div class="td-mid"><div class="td-nm"><b>' + esc(pk.p) + '</b></div><div class="td-ln">' + esc(label + ' · ' + propLabel(pk)) + '</div></div>' +
+  return '<div class="lv-mini">' + tlogo(pk.tm, 'sm') + '<div class="td-mid"><div class="td-nm"><b>' + esc(pk.p) + '</b></div><div class="td-ln">' + esc(label + ' · ' + propLabel(pk)) + '</div></div>' +
     '<div class="lv-now"><b>' + (pr.cur === null ? '—' : esc(pr.cur)) + '</b><span class="lv-st ' + pr.cls + '">' + esc(pr.status) + '</span></div></div>';
 }
 function liveScore(g, lg, big) {
@@ -562,7 +613,7 @@ function card(k, ctx) {
     : 'Game <b>' + (c.gr ? '#' + c.gr : '—') + '</b> · ' + slateName(c.sl) + ' <b>' + (c.sr ? '#' + c.sr : '—') + '</b>';
   return '<article class="card' + (U(c.st) === 'BET' ? ' isbet' : '') + '">' +
     '<div class="hero pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + c.p) + '"' + pcAttrs(c.pid, c.m, c.dr, k) + ' style="background:linear-gradient(100deg,' + t.color + ' 0%,' + t.color + ' 24%,#10171F 70%)">' +
-      '<img class="wm" src="' + esc(logoUrl(c.tm)) + '" alt="" loading="lazy" onerror="this.remove()">' +
+      '<img class="wm" src="' + esc(logoUrl(c.tm)) + '" alt="" loading="lazy" onerror="logoErr(this)">' +
       '<div class="rk">' + (rank ? '<span class="rkb">' + rank + '</span>' : '') + pill(c) + '</div>' +
       '<div class="hs">' + hs + '</div>' +
       '<div class="id"><div class="nm">' + esc(c.p) + '</div><div class="meta">' + esc(meta) + '</div></div>' +
@@ -753,7 +804,7 @@ function pcView() {
   const where = c.op ? (home === false ? '@ ' : 'vs ') + c.op : '';
   const meta = [c.pos, t.name, where, g ? dayTime(g.t) : ''].filter(Boolean).join(' · ');
   let h = '<div class="pchero" style="background:linear-gradient(100deg,' + t.color + ' 0%,' + t.color + ' 26%,var(--panel) 74%)">' +
-    '<img class="wm" src="' + esc(logoUrl(c.tm)) + '" alt="" loading="lazy" onerror="this.remove()">' +
+    '<img class="wm" src="' + esc(logoUrl(c.tm)) + '" alt="" loading="lazy" onerror="logoErr(this)">' +
     '<button class="pcx" type="button" data-act="pc-close" aria-label="Close player view"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
     '<div class="hs">' + hs + '</div><div class="pcid"><h2 id="pcTitle">' + esc(c.p || base.p || '') + '</h2><div class="meta">' + esc(meta) + '</div></div></div>';
   h += '<div class="pcbody">';
