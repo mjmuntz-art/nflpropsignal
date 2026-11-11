@@ -146,7 +146,6 @@ function warnTags(w) { const seen = {}, out = []; String(w || '').split('|').map
 const reason = r => REASON[r] || String(r || '').replace(/_/g, ' ').toLowerCase().replace(/^./, x => x.toUpperCase());
 
 /* ---------------- data loading ---------------- */
-
 function call(fn, args, ok, fail) {
   const parts = {nflpBoardGetCore:'core',nflpBoardGetProps:'props',nflpBoardGetPlayers:'players',nflpBoardGetAudit:'audit'};
   if (!Object.prototype.hasOwnProperty.call(parts, fn)) { fail(new Error('Unsupported dashboard request.')); return; }
@@ -921,6 +920,73 @@ function ladderTile() {
   return h + '</section>';
 }
 
+/* ---------------- Light-role receivers (research forward test) ---------------- */
+const lrU = v => isNum(v) ? (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + 'u' : '—';
+const lrRec = o => o ? o.w + '–' + o.l + (o.v ? '–' + o.v + 'V' : '') : '—';
+const lrRes = g => g ? '<span class="lrres ' + esc(g) + '">' + esc(g === 'V' ? 'VOID' : g === 'P' ? 'PUSH' : g) + '</span>' : '';
+const lrMarket = l => dirWord('OVER') + ' ' + l.ln + ' ' + mkt(l.m);
+function lrLegLine(l, extra) {
+  const tag = l.kind === 'milestone' ? 'milestone · ' + Math.round(l.ln / l.ml * 100) + '% of ' + l.ml + ' main' : 'main line';
+  return '<div class="lleg"><div><b' + pcAttrs(l.pid, l.m, 'OVER', '') + ' style="cursor:pointer">' + esc(l.p) + '</b> <span class="mut">' + esc([l.tm, l.pos].filter(Boolean).join(' · ')) + '</span>' +
+    (l.locked ? ' <span class="mut">· ' + LOCK + ' locked</span>' : '') + lrRes(l.g) +
+    '<div class="mut" style="font-size:12px">' + esc(lrMarket(l)) + ' <span class="dim">(' + esc(tag) + ')</span>' + (isNum(l.a) ? ' · actual <b>' + esc(l.a) + '</b>' : '') + (extra || '') + '</div></div>' +
+    '<div class="r"><b>' + odd(l.o) + '</b><span class="mut" style="display:block;font-size:11px">' + esc(book(l.bk)) + (isNum(l.hp) ? ' · V3 ' + pct(l.hp, 0) : '') + '</span></div></div>';
+}
+function lrCardLine(s, i, label) {
+  const why = [isNum(s.cleared) ? 'cleared ' + Math.round(s.cleared * 100) + '% of ' + s.games + ' games' : 'no earlier games', isNum(s.avg) ? 'avg ' + s.avg : '', isNum(s.ou) ? 'O/U ' + s.ou : ''].filter(Boolean).join(' · ');
+  return '<div class="lleg"><div style="display:flex;align-items:center"><span class="lrrank">' + (label || i + 1) + '</span><div><b' + pcAttrs(s.pid, s.m, 'OVER', '') + ' style="cursor:pointer">' + esc(s.p) + '</b> <span class="mut">' + esc([s.tm, s.pos].filter(Boolean).join(' · ')) + (s.op ? ' vs ' + esc(s.op) : '') + '</span>' +
+    (s.locked ? ' <span class="mut">· ' + LOCK + ' locked</span>' : '') + lrRes(s.g) +
+    '<div class="mut" style="font-size:12px">' + esc(lrMarket(s)) + (isNum(s.a) ? ' · actual <b>' + esc(s.a) + '</b>' : '') + '</div>' +
+    '<div class="dim" style="font-size:11px">Score ' + esc(Math.round(s.score)) + ' · ' + esc(why) + '</div></div></div>' +
+    '<div class="r"><b>' + odd(s.o) + '</b><span class="mut" style="display:block;font-size:11px">' + esc(book(s.bk)) + '</span></div></div>';
+}
+function lrTicket(t, i, kind) {
+  const D = t.legs.reduce((d, l) => d * decOf(l.o), 1);
+  const est = kind === 'g' ? 1 + (D - 1) * 0.9 : D;
+  const hp = t.legs.reduce((p, l) => p * (isNum(l.hp) ? l.hp : NaN), 1);
+  const head = kind === 'g' ? '<span class="sv plus">' + odd(amOf(D)) + '</span><span class="mut">combined · est. book price <b>' + odd(amOf(est)) + '</b>' + (isNum(hp) ? ' · V3 hit ' + pct(hp, 0) : '') + '</span>'
+    : '<span class="sv plus">' + odd(amOf(D)) + '</span><span class="mut">' + t.legs.length + ' legs' + (isNum(hp) ? ' · V3 hit ' + pct(hp, 0) : '') + '</span>';
+  const res = t.res ? lrRes(t.res) + (t.res === 'W' || t.res === 'L' ? ' <span class="mut">' + lrU(t.units) + '</span>' : '') : '';
+  const lockedAny = t.legs.some(l => l.locked);
+  return '<div class="lpair"><div class="lph">' + head + res +
+    (lockedAny ? '' : '<button class="ghost" type="button" data-act="lr-load" data-t="' + kind + '" data-i="' + i + '">Load into my parlay</button>') + '</div>' +
+    t.legs.map(l => lrLegLine(l)).join('') + '</div>';
+}
+function viewLightRole() {
+  const L = S.core.lr;
+  if (!L || !L.current) return '';
+  const c = L.current, R = L.record || {}, B = R.backtest || {}, T = R.total || {}, BT = B.total || {};
+  const tile = (title, f, b, unit) => '<div class="ptile"><div class="tl">' + title + '</div><div class="tv">' + (f && f.n ? lrRec(f) : '—') + '</div>' +
+    '<div class="ts">' + (f && f.n ? '<b>' + lrU(f.units) + '</b> · ROI ' + sev(f.units / f.n) + ' · since Week ' + esc(R.firstForwardWeek) : 'Forward test starts Week ' + esc(R.firstForwardWeek)) + '</div>' +
+    '<div class="lrbt">Backtest W' + esc(B.weeks || '4-9') + ': ' + (b ? lrRec(b) + ' · ' + lrU(b.units) + ' · ROI ' + sev(b.units / b.n) : '—') + '</div></div>';
+  let h = '<section class="sec" id="light-role"><div class="sh"><div><h2>Light-role list · forward test</h2>' +
+    '<p>Research only, never a BET or LEAN. Overs on receivers V3 tags with a light receiving role. Each game\'s picks lock at its kickoff; the record counts from Week ' + esc(R.firstForwardWeek) + '.</p></div></div>' +
+    '<div class="ptiles">' + tile('Top 10 straights', T.card, BT.card) + tile('2-leg parlays', T.parlays, BT.parlays) + tile('Same-game parlays', T.sgps, BT.sgps) + '</div>';
+  h += '<div class="dl" style="margin-top:18px">Week ' + esc(c.week) + ' · top 10 straights</div>' +
+    '<p class="mut" style="font-size:12px;margin:2px 0 6px">Ranked by the under-the-radar score: rarely cleared this line before, season average below it, lower game total. One prop per player, main line, ' + esc(c.pool) + ' players in the group.</p>' +
+    (c.card.length ? '<div class="lpair lrcard">' + c.card.map((s, i) => lrCardLine(s, i)).join('') + '</div>' : '<div class="empty">No light-role receivers on the board yet.</div>');
+  h += '<div style="margin-top:14px"></div>' + fold('lr-parlays', '2-leg parlays', 'WR and TE only, none of the top 10. DraftKings/FanDuel milestone line near 70% of the main line, or a main line at −130 or shorter. Different games, +100 or better.', c.parlays.length,
+    () => c.parlays.length ? c.parlays.map((t, i) => lrTicket(t, i, 'p')).join('') : '<div class="empty">No qualifying pairs on the current board.</div>');
+  h += fold('lr-sgps', 'Same-game parlays', 'Same legs, one per game, at most two from one team. Graded at the combined price less 10%. Load one into your parlay and type the book\'s real same-game price to check it.', c.sgps.length,
+    () => c.sgps.length ? c.sgps.map((t, i) => lrTicket(t, i, 'g')).join('') : '<div class="empty">No qualifying same-game parlays on the current board.</div>');
+  if (c.next && c.next.length) h += fold('lr-next', 'Next on the list', 'Players ranked just below the top 10 (not part of the test).', c.next.length, () =>
+    '<div class="lpair lrcard">' + c.next.map((s, i) => lrCardLine(s, i, s.rank)).join('') + '</div>');
+  return h + '</section>';
+}
+function lrTile() {
+  const R = S.core.lr && S.core.lr.record;
+  if (!R) return '';
+  const B = R.backtest || {}, T = R.total || {};
+  const cell = o => o && (o.n || o.pending) ? lrRec(o) + ' <span class="' + (o.units >= 0 ? 'pos' : 'neg') + '">' + lrU(o.units) + '</span>' + (o.pending ? ' <span class="mut">· ' + o.pending + ' pending</span>' : '') : '—';
+  const bcell = a => a ? a[0] + '–' + a[1] + ' <span class="' + (a[2] >= 0 ? 'pos' : 'neg') + '">' + lrU(a[2]) + '</span>' : '—';
+  const most = Math.max(T.card ? T.card.weeks : 0, T.parlays ? T.parlays.weeks : 0);
+  let h = '<section class="sec"><div class="sh"><div><h3>Light-role list · forward test</h3><p>Rule ' + esc(R.rule) + ', locked before Week ' + esc(R.firstForwardWeek) + '. Weeks ' + esc(B.weeks || '4-9') + ' were used to find it, so only Week ' + esc(R.firstForwardWeek) + ' onward is a real test. Progress: ' + most + '/' + esc(R.minWeeks) + ' weeks, ' + (T.card ? T.card.n : 0) + '/' + esc(R.minDecisions) + ' straights.</p></div></div>';
+  const rows = (R.weeks || []).map(w => '<tr><td>W' + w.week + '</td><td class="r num">' + cell(w.card) + '</td><td class="r num">' + cell(w.parlays) + '</td><td class="r num">' + cell(w.sgps) + '</td></tr>').join('');
+  const brows = (B.byWeek || []).map(w => '<tr class="dim"><td>W' + w.week + ' <span class="mut">backtest</span></td><td class="r num">' + bcell(w.card) + '</td><td class="r num">' + bcell(w.parlays) + '</td><td class="r num">' + bcell(w.sgps) + '</td></tr>').join('');
+  h += tbl('<thead><tr><th>Week</th><th class="r">Top 10</th><th class="r">2-leg parlays</th><th class="r">Same-game</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4" class="mut">No forward weeks graded yet.</td></tr>') + brows + '</tbody>');
+  return h + '</section>';
+}
+
 /* ---------------- Units by week (Performance) ---------------- */
 function unitsTile(P) {
   const wk = (P.weeks || []).filter(x => x.s && isNum(x.s.u));
@@ -970,6 +1036,7 @@ function viewPicks() {
     '<div class="legend"><span>' + STAR + 'S1 Highlight = Signal 80+</span><span><span class="st lean">LEAN</span>positive value at this price</span><span><span class="st bet">BET</span>Highlight + value gate</span><span>Bet to = worst price that still qualifies</span></div></div>' +
     (s.straights.length ? grid(s.straights) : '<div class="empty">No actionable Straights on the current board.</div>') + '</section>';
   h += viewWatchlist();
+  h += viewLightRole();
   h += '<section class="sec"><div class="sh"><div><h2>Also on the board</h2></div></div>' +
     fold('lr', 'Lower Risk · Sunday Top 9', 'Alternate-line parlay legs ranked by L1. Check the real combined parlay price before using one.', s.lowerRisk.length, () => grid(s.lowerRisk) || '<div class="empty">No Lower Risk legs this week.</div>') +
     fold('j1', 'Longshot Plus · J1 Top 20', 'Research candidates ranked by J1. Tracked for learning, never a production BET or LEAN.', s.longshot.length, () => grid(s.longshot) || '<div class="empty">No Longshot Plus research candidates.</div>') +
@@ -1250,7 +1317,7 @@ function viewPerf() {
     '</div>';
   ((S.core.meta.snapshot || {}).warnings || []).forEach(w => { h += '<div class="note warn">' + esc(w) + '</div>'; });
   h += '</section>';
-  if (S.period === 'season') h += unitsTile(P) + fcTile(S.core.fcCheck) + ladderTile();
+  if (S.period === 'season') h += unitsTile(P) + fcTile(S.core.fcCheck) + ladderTile() + lrTile();
   h += '<section class="sec"><div class="sh"><div><h3>By recommendation</h3></div></div>' +
     tbl(sumHead('Call') + '<tbody>' + sumRow('All official', P.official.all) + sumRow('BET', P.official.bet) + sumRow('LEAN', P.official.lean) + '</tbody>') +
     fold('off-list', 'Every official call', 'The original locked recommendations, oldest week first.', P.officialList.length, () =>
@@ -1456,6 +1523,10 @@ document.addEventListener('click', e => {
   if (act === 'slip-close') { S.slipOpen = false; renderSlip(); return; }
   if (act === 'slip-del') { S.slip.splice(Number(a.dataset.i), 1); slipSave(); renderSlip(); return; }
   if (act === 'slip-clear') { S.slip = []; S.slipBook = ''; slipSave(); S.slipOpen = false; renderSlip(); return; }
+  if (act === 'lr-load') { const c = S.core.lr.current, t = (a.dataset.t === 'g' ? c.sgps : c.parlays)[Number(a.dataset.i)];
+    if (!t) return;
+    S.slip = t.legs.map(l => ({pid: l.pid, p: l.p, tm: l.tm, op: l.op, pos: l.pos, e: l.e, m: l.m, dr: 'OVER', ln: l.ln, o: isNum(l.o) ? (l.o > 0 ? '+' + l.o : String(l.o)) : '', bo: '', bk: book(l.bk), hp: l.hp}));
+    S.slipBook = ''; slipSave(); S.slipOpen = true; renderSlip(); return; }
   if (act === 'slip-load') { const c = S.core.ladder.current, pr = c.pairs[Number(a.dataset.i)];
     S.slip = pr.map(j => { const l = c.legs[j]; return {pid: l.pid, p: l.p, tm: l.tm, op: l.op, pos: l.pos, e: l.e, m: l.m, dr: l.dr, ln: l.ln, o: isNum(l.o) ? (l.o > 0 ? '+' + l.o : String(l.o)) : '', bo: '', bk: book(l.bk), hp: l.hp}; });
     S.slipBook = ''; slipSave(); S.slipOpen = true; renderSlip(); return; }
