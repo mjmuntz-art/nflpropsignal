@@ -671,6 +671,22 @@ body.pc-open #slipfab{z-index:130}
 .td-faces{display:flex;flex:none}
 .td-faces .cut + .cut{margin-left:-14px}
 .td-research{display:flex;flex-direction:column}
+.td-ctl{display:flex;align-items:center;gap:10px}
+.td-ctl .td-chips{flex:1;min-width:0}
+.td-mode{flex:none}
+.td-sh{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--bg2)}
+.td-st{display:flex;flex-direction:column;gap:1px;min-width:0}
+.td-st b{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:.3px;line-height:1.1}
+.td-st span{font-size:12px;color:var(--ink2)}
+.td-sort{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;max-width:100%}
+.td-sort::-webkit-scrollbar{display:none}
+.td-sort span{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);margin-right:2px}
+.td-sort button{background:var(--panel);border:1px solid var(--line);color:var(--ink2);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;min-height:32px;white-space:nowrap;cursor:pointer}
+.td-sort button.on{color:var(--ink);border-color:var(--line2);background:var(--panel2)}
+.td-list .td-sh + .td-row{border-top:0}
+.td-gm{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;font-size:12px;color:var(--ink2);margin-top:4px}
+.td-gm span{white-space:nowrap}
+.td-gsep{color:var(--dim);padding:0 2px}
 .td-raillab{display:flex;align-items:center;gap:8px;font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:1px;text-transform:uppercase;color:var(--ink2);padding:12px 14px 8px}
 .td-pad{padding-bottom:12px}
 .td-rec{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 14px 10px}
@@ -766,6 +782,11 @@ body.pc-open #slipfab{z-index:130}
   .td-tile{padding:10px;border-radius:12px}
   .td-tile b{font-size:24px}
   .td-row{padding:0 12px;gap:10px}
+  .td-ctl{flex-wrap:wrap}
+  .td-ctl .td-chips{flex-basis:100%}
+  .td-mode{width:100%;display:grid;grid-template-columns:1fr 1fr}
+  .td-mode button{min-height:40px}
+  .td-sh{padding:12px}
   .tlg{width:48px;height:48px;border-radius:12px}
   .tlg img{width:36px;height:36px}
   .cut.md{width:54px;height:60px}
@@ -866,7 +887,7 @@ body.pc-open #slipfab{z-index:130}
 <div id="slipfab"></div>
 <div class="slipwrap" id="slip"></div>
 
-<script src="config.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="config.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

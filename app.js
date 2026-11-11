@@ -1,3 +1,4 @@
+
 const INITIAL_VIEW = new URLSearchParams(location.search).get('view') || 'picks';
 
 /* ---------------- static assets ---------------- */
@@ -223,7 +224,10 @@ function showError(e) {
 const TABS = {today: 1, live: 1, explore: 1, results: 1};
 const EX_SUBS = [['games', 'Games'], ['props', 'All props'], ['picks', 'Full picks']];
 const RE_SUBS = [['performance', 'Performance'], ['portfolio', 'Portfolio'], ['system', 'System']];
-Object.assign(S, {tab: 'today', exSub: 'games', reSub: 'performance', tf: 'all', live: null, liveErr: '', liveLoading: false});
+Object.assign(S, {tab: 'today', exSub: 'games', reSub: 'performance', tf: 'all', live: null, liveErr: '', liveLoading: false,
+  tdMode: 'game', sortB: 'rank', sortT: 'rank', sortP: 'price', sortG: 'price'});
+try { const t = JSON.parse(localStorage.getItem('nflp_today') || '{}'); ['tdMode', 'sortB', 'sortT', 'sortP', 'sortG'].forEach(k => { if (typeof t[k] === 'string') S[k] = t[k]; }); } catch (e) {}
+function saveToday() { try { localStorage.setItem('nflp_today', JSON.stringify({tdMode: S.tdMode, sortB: S.sortB, sortT: S.sortT, sortP: S.sortP, sortG: S.sortG})); } catch (e) {} }
 function setTab(t) {
   if (!TABS[t]) t = 'today';
   S.tab = t;
@@ -308,11 +312,11 @@ function ticketStatus(x) {
 const KIND = {bet: ['Bet', 'k-bet'], lean: ['Lean', 'k-lean'], top: ['Top 10', 'k-top'], par: ['Parlay', 'k-par'], sgp: ['SGP', 'k-sgp']};
 function weekItems() {
   const cards = S.core.cards, sec = S.core.sections, lr = S.core.lr && S.core.lr.current, out = [];
-  sec.straights.forEach(k => { const c = cards[k]; if (c) out.push({kind: U(c.st) === 'BET' ? 'bet' : 'lean', e: c.e, t: c.t, c: c, k: k}); });
+  sec.straights.forEach((k, r) => { const c = cards[k]; if (c) out.push({kind: U(c.st) === 'BET' ? 'bet' : 'lean', e: c.e, t: c.t, c: c, k: k, r: r}); });
   if (lr) {
-    lr.card.forEach((s, i) => out.push({kind: 'top', e: s.e, t: s.t, s: s, i: i}));
-    lr.sgps.forEach((x, i) => out.push({kind: 'sgp', e: x.e, t: x.legs[0] && x.legs[0].t, x: x, i: i}));
-    lr.parlays.forEach((x, i) => { const L = x.legs.slice().sort((a, b) => (a.t || 0) - (b.t || 0)); out.push({kind: 'par', e: L[0].e, t: L[0].t, x: x, i: i}); });
+    lr.card.forEach((s, i) => out.push({kind: 'top', e: s.e, t: s.t, s: s, i: i, r: i}));
+    lr.sgps.forEach((x, i) => out.push({kind: 'sgp', e: x.e, t: x.legs[0] && x.legs[0].t, x: x, i: i, r: i}));
+    lr.parlays.forEach((x, i) => out.push({kind: 'par', e: x.legs[0].e, x: x, i: i, r: i}));
   }
   return out;
 }
@@ -323,18 +327,23 @@ const MSHORT = {'RECEPTIONS': 'rec', 'RECEIVING YARDS': 'rec yds', 'RUSHING YARD
 const legShort = l => surname(l.p) + ' ' + Math.ceil(l.ln) + '+ ' + (MSHORT[U(l.m)] || mkt(l.m).toLowerCase());
 const gameOf = e => (S.core.games || []).find(g => g.id === e) || null;
 
-function tdRow(it) {
+function gameLine(es) {
+  const gs = es.map(gameOf).filter((g, i, a) => g && a.indexOf(g) === i).sort((a, b) => (a.t || 0) - (b.t || 0));
+  return gs.length ? '<div class="td-gm">' + gs.map(g => logo(g.away, 'xs') + '<span>' + esc(g.away + ' at ' + g.home) + '</span>' + logo(g.home, 'xs') + '<span class="mut">' + esc(dayTime(g.t)) + '</span>').join('<span class="td-gsep">+</span>') + '</div>' : '';
+}
+function tdRow(it, withGame) {
   const chip = '<span class="kchip ' + KIND[it.kind][1] + '">' + KIND[it.kind][0] + '</span>';
+  const gl = withGame ? gameLine(it.x ? it.x.legs.map(l => l.e) : [it.e]) : '';
   if (it.c) {
     const c = it.c;
     return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + c.p) + '"' + pcAttrs(c.pid, c.m, c.dr, it.k) + '>' + tlogo(c.tm) +
-      '<div class="td-mid"><div class="td-nm"><b>' + esc(c.p) + '</b>' + chip + rowStatus(c, c.e, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).g, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).a) + '</div><div class="td-ln">' + esc(propLabel(c)) + ' · ' + esc([c.pos, book(c.bk)].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<div class="td-mid"><div class="td-nm"><b>' + esc(c.p) + '</b>' + chip + rowStatus(c, c.e, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).g, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).a) + '</div><div class="td-ln">' + (withGame && c.wr ? '#' + c.wr + ' · ' : '') + esc(propLabel(c)) + ' · ' + esc([c.pos, book(c.bk)].filter(Boolean).join(' · ')) + '</div>' + gl + '</div>' +
       '<div class="td-r"><b>' + odd(c.o) + '</b><span>V3 ' + pct(c.hp, 0) + '</span></div></div>';
   }
   if (it.s) {
     const s = it.s;
     return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + s.p) + '"' + pcAttrs(s.pid, s.m, 'OVER', '') + '>' + tlogo(s.tm) +
-      '<div class="td-mid"><div class="td-nm"><b>' + esc(s.p) + '</b>' + chip + rowStatus(Object.assign({dr: 'OVER'}, s), s.e, s.g, s.a) + '</div><div class="td-ln">#' + (it.i + 1) + ' · ' + esc(lrMarket(s)) + ' · ' + esc(s.pos || '') + '</div></div>' +
+      '<div class="td-mid"><div class="td-nm"><b>' + esc(s.p) + '</b>' + chip + rowStatus(Object.assign({dr: 'OVER'}, s), s.e, s.g, s.a) + '</div><div class="td-ln">#' + (it.i + 1) + ' · ' + esc(lrMarket(s)) + ' · ' + esc(s.pos || '') + '</div>' + gl + '</div>' +
       '<div class="td-r"><b>' + odd(s.o) + '</b><span>Score ' + esc(Math.round(s.score)) + '</span></div></div>';
   }
   const x = it.x, D = ticketDec(x), sg = it.kind === 'sgp', price = sg ? 1 + (D - 1) * 0.9 : D;
@@ -342,7 +351,7 @@ function tdRow(it) {
   const faces = '<span class="td-faces">' + tms.map(t => tlogo(t, 'sm')).join('') + '</span>';
   const locked = x.legs.some(l => l.locked);
   const inner = faces + '<div class="td-mid"><div class="td-nm"><b>' + esc(sg ? 'Same-game parlay' : x.legs.map(l => surname(l.p)).join(' + ')) + '</b>' + chip + ticketStatus(x) + '</div>' +
-    '<div class="td-ln">' + esc(x.legs.map(legShort).join(' · ')) + '</div></div>' +
+    '<div class="td-ln">' + esc(x.legs.map(legShort).join(' · ')) + '</div>' + gl + '</div>' +
     '<div class="td-r"><b>' + odd(amOf(price)) + '</b><span>' + (sg ? 'est. book' : x.legs.length + ' legs') + '</span></div>';
   return locked ? '<div class="td-row">' + inner + '</div>'
     : '<button type="button" class="td-row" data-act="lr-load" data-t="' + (sg ? 'g' : 'p') + '" data-i="' + it.i + '" aria-label="Load into my parlay">' + inner + '</button>';
@@ -368,6 +377,32 @@ function tdHero(items) {
     '<div class="td-hl">' + esc(isTop ? lrMarket(o) : propLabel(o)) + '</div>' +
     '<div class="td-ho"><b>' + odd(o.o) + '</b><span>' + esc(book(o.bk)) + (isTop ? ' · score ' + Math.round(o.score) : ' · V3 ' + pct(o.hp, 0)) + '</span></div></div></section>';
 }
+const itemKick = it => it.x ? Math.min.apply(null, it.x.legs.map(l => (gameOf(l.e) || {}).t || Infinity)) : ((gameOf(it.e) || {}).t || Infinity);
+const itemDec = it => it.c ? decOf(it.c.o) : it.s ? decOf(it.s.o) : it.kind === 'sgp' ? 1 + (ticketDec(it.x) - 1) * 0.9 : ticketDec(it.x);
+const itemHit = it => it.c ? it.c.hp : it.s ? it.s.hp : it.x.legs.reduce((p, l) => p * (isNum(l.hp) ? l.hp : NaN), 1);
+const num0 = v => isNum(v) ? v : -Infinity;
+function sortItems(list, how) {
+  const by = {rank: (a, b) => a.r - b.r, price: (a, b) => num0(itemDec(b)) - num0(itemDec(a)) || a.r - b.r, odds: (a, b) => num0(itemDec(b)) - num0(itemDec(a)) || a.r - b.r,
+    hit: (a, b) => num0(itemHit(b)) - num0(itemHit(a)) || a.r - b.r, ev: (a, b) => num0(b.c && b.c.ev) - num0(a.c && a.c.ev) || a.r - b.r,
+    ko: (a, b) => itemKick(a) - itemKick(b) || a.r - b.r}[how] || ((a, b) => a.r - b.r);
+  return list.slice().sort(by);
+}
+const SORTS = {
+  sortB: [['rank', 'Signal rank'], ['odds', 'Best odds'], ['hit', 'V3 hit'], ['ev', 'V3 EV'], ['ko', 'Kickoff']],
+  sortT: [['rank', 'Rank'], ['odds', 'Best odds'], ['hit', 'V3 hit'], ['ko', 'Kickoff']],
+  sortG: [['price', 'Best price'], ['hit', 'V3 hit'], ['ko', 'Kickoff']],
+  sortP: [['price', 'Best price'], ['hit', 'V3 hit'], ['ko', 'Kickoff']]
+};
+const sortBar = key => '<div class="td-sort" role="group" aria-label="Sort"><span>Sort</span>' + SORTS[key].map(o =>
+  '<button type="button" class="' + (S[key] === o[0] ? 'on' : '') + '" aria-pressed="' + (S[key] === o[0]) + '" data-act="tdsort" data-k="' + key + '" data-v="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>';
+function listSection(title, sub, key, its) {
+  if (!its.length) return '';
+  return '<section class="td-game td-list"><div class="td-sh"><div class="td-st"><b>' + esc(title) + '</b><span>' + esc(sub) + '</span></div>' + sortBar(key) + '</div>' +
+    sortItems(its, S[key]).map(it => tdRow(it, true)).join('') + '</section>';
+}
+function crossParlays(its) {
+  return listSection('Cross-game parlays', its.length + ' two-leg parlays · legs from different games · tap one to load it into your parlay', 'sortP', its);
+}
 function viewToday() {
   const items = weekItems(), games = (S.core.games || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
   const s = S.core.sections, lr = S.core.lr && S.core.lr.current;
@@ -377,7 +412,8 @@ function viewToday() {
   const chip = (id, lab, cls) => '<button type="button" class="td-chip ' + (cls || '') + (S.tf === id ? ' on' : '') + '" data-act="tf" data-v="' + id + '">' + lab + '</button>';
   let main = tdHero(items) +
     '<div class="td-tiles">' + tile('Bets', n.bets, 'c-bet') + tile('Top 10', n.top, 'c-top') + tile('Parlays', n.par, 'c-par') + tile('Research', n.res, 'c-res') + '</div>' +
-    '<div class="td-chips">' + chip('all', 'All ' + (n.bets + n.top + n.par)) + chip('bets', 'Bets', 'k-bet') + chip('top', 'Top 10', 'k-top') + chip('par', 'Parlays', 'k-par') + chip('res', 'Research', 'k-res') + '</div>';
+    '<div class="td-ctl"><div class="td-chips">' + chip('all', 'All ' + (n.bets + n.top + n.par)) + chip('bets', 'Bets', 'k-bet') + chip('top', 'Top 10', 'k-top') + chip('par', 'Parlays', 'k-par') + chip('res', 'Research', 'k-res') + '</div>' +
+    (S.tf === 'res' ? '' : '<div class="seg td-mode" role="group" aria-label="Group picks"><button type="button" class="' + (S.tdMode === 'game' ? 'on' : '') + '" data-act="tdmode" data-v="game">By game</button><button type="button" class="' + (S.tdMode === 'list' ? 'on' : '') + '" data-act="tdmode" data-v="list">By list</button></div>') + '</div>';
   if (S.tf === 'res') {
     main += '<div class="td-research">' + viewWatchlist() +
       fold('lr', 'Lower Risk · Sunday Top 9', 'Alternate-line parlay legs ranked by L1. Check the real combined parlay price before using one.', s.lowerRisk.length, () => grid(s.lowerRisk) || '<div class="empty">No Lower Risk legs this week.</div>') +
@@ -386,10 +422,18 @@ function viewToday() {
       viewLadder() +
       (lr && lr.next && lr.next.length ? fold('lr-next', 'Light-role · next on the list', 'Players ranked just below the top 10 (not part of the test).', lr.next.length, () =>
         '<div class="lpair lrcard">' + lr.next.map((x, i) => lrCardLine(x, i, x.rank)).join('') + '</div>') : '') + '</div>';
+  } else if (S.tdMode === 'list') {
+    const shown = items.filter(x => tfOk(x, S.tf)), of = k => shown.filter(x => k.indexOf(x.kind) >= 0);
+    const b = of(['bet', 'lean']), nb = b.filter(x => x.kind === 'bet').length;
+    main += listSection('V3 Bets & Leans', b.length + ' straights · ' + nb + ' BET · ' + (b.length - nb) + ' LEAN', 'sortB', b) +
+      listSection('Top 10 · light-role', 'Under-the-radar score, one prop per player · research forward test', 'sortT', of(['top'])) +
+      listSection('Same-game parlays', of(['sgp']).length + ' tickets · price shown is the combined odds less 10%', 'sortG', of(['sgp'])) +
+      crossParlays(of(['par']));
+    if (!shown.length) main += '<div class="empty">Nothing in this list on the current board.</div>';
   } else {
-    const byE = {};
-    items.filter(x => tfOk(x, S.tf)).forEach(x => (byE[x.e] || (byE[x.e] = [])).push(x));
-    const order = {bet: 0, lean: 1, top: 2, sgp: 3, par: 4};
+    const byE = {}, shown = items.filter(x => tfOk(x, S.tf));
+    shown.filter(x => x.kind !== 'par').forEach(x => (byE[x.e] || (byE[x.e] = [])).push(x));
+    const order = {bet: 0, lean: 1, top: 2, sgp: 3};
     let last = '';
     games.forEach(function (g) {
       const its = byE[g.id];
@@ -397,9 +441,11 @@ function viewToday() {
       its.sort((a, b) => order[a.kind] - order[b.kind]);
       const day = fmt(g.t, {weekday: 'long'});
       if (day !== last) { main += '<div class="td-day">' + esc(day) + '</div>'; last = day; }
-      main += '<section class="td-game">' + gameBand(g) + its.map(tdRow).join('') + '</section>';
+      main += '<section class="td-game">' + gameBand(g) + its.map(it => tdRow(it)).join('') + '</section>';
     });
-    if (!Object.keys(byE).length) main += '<div class="empty">Nothing in this list on the current board.</div>';
+    const cross = shown.filter(x => x.kind === 'par');
+    if (cross.length) main += '<div class="td-day">All games</div>' + crossParlays(cross);
+    if (!shown.length) main += '<div class="empty">Nothing in this list on the current board.</div>';
   }
   return '<div class="today"><div class="td-main">' + main + '</div><aside class="td-rail">' + liveRail(items, games) + '</aside></div>';
 }
@@ -1892,6 +1938,8 @@ document.addEventListener('click', e => {
   if (act === 'shop-del') { const c = shopCurrentCard(); if (!c) return; shopState(c).rows.splice(Number(a.dataset.i), 1); renderPC(); return; }
   if (act === 'sub') { if (a.dataset.for === 'explore') S.exSub = a.dataset.v; else S.reSub = a.dataset.v; setTab(a.dataset.for); return; }
   if (act === 'tf') { S.tf = a.dataset.v; render(); return; }
+  if (act === 'tdmode') { S.tdMode = a.dataset.v; saveToday(); render(); return; }
+  if (act === 'tdsort') { S[a.dataset.k] = a.dataset.v; saveToday(); render(); return; }
   if (act === 'card') { const k = a.dataset.k; S.open[k] = !S.open[k]; render(); return; }
   if (act === 'wl') { const k = a.dataset.k; S.wlOpen[k] = !S.wlOpen[k]; render(); return; }
   if (act === 'wlf') { S.wlf = a.dataset.f; render(); return; }
