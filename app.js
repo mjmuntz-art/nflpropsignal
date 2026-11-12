@@ -240,7 +240,7 @@ function setTab(t) {
 }
 function setView(v) {
   if (TABS[v]) return setTab(v);
-  if (EX_SUBS.some(x => x[0] === v)) { S.exSub = v; return setTab('explore'); }
+  if (EX_SUBS.some(x => x[0] === v)) { S.exSub = v; if (v === 'games') S.gameOpen = false; return setTab('explore'); }
   if (RE_SUBS.some(x => x[0] === v)) { S.reSub = v; return setTab('results'); }
   return setTab('today');
 }
@@ -327,55 +327,106 @@ const MSHORT = {'RECEPTIONS': 'rec', 'RECEIVING YARDS': 'rec yds', 'RUSHING YARD
 const legShort = l => surname(l.p) + ' ' + Math.ceil(l.ln) + '+ ' + (MSHORT[U(l.m)] || mkt(l.m).toLowerCase());
 const gameOf = e => (S.core.games || []).find(g => g.id === e) || null;
 
+/* ---- 3.0 look: Primetime frame, round team badges, Signal charts ---- */
+const TEAM2 = {ARI:'#FFB612',ATL:'#C9CED1',BAL:'#9E7C0C',BUF:'#C60C30',CAR:'#BFC0BF',CHI:'#C83803',CIN:'#101820',CLE:'#FF3C00',DAL:'#869397',DEN:'#FB4F14',DET:'#B0B7BC',GB:'#FFB612',
+  HOU:'#A71930',IND:'#A2AAAD',JAX:'#D7A22A',KC:'#FFB81C',LAC:'#FFC20E',LAR:'#FFA300',LV:'#A5ACAF',MIA:'#FC4C02',MIN:'#FFC62F',NE:'#C60C30',NO:'#D3BC8D',NYG:'#A71930',
+  NYJ:'#E8EEF2',PHI:'#A5ACAF',PIT:'#FFB612',SF:'#B3995D',SEA:'#69BE28',TB:'#FF7900',TEN:'#C8102E',WAS:'#FFB612'};
+function badge(t, px) {
+  if (!t) return '';
+  const tm = team(t), ring = TEAM2[U(t)] || '#2A3946';
+  return '<span class="bdg" style="width:' + px + 'px;height:' + px + 'px;--tc:' + tm.color + ';--tr:' + ring + ';font-size:' + Math.round(px * 0.36) + 'px"><img src="' + esc(logoUrl(t)) + '" alt="' + esc(tm.code) + '" loading="lazy" onerror="bdgErr(this)"></span>';
+}
+window.bdgErr = function (im) {
+  if (im.src.indexOf('/500-dark/') >= 0) { im.src = im.src.replace('/500-dark/', '/500/'); return; }
+  const b = im.parentNode; if (!b) return; b.classList.add('txt'); b.textContent = im.alt;
+};
+const nick = t => { const n = team(t).name.split(' '); return n[n.length - 1]; };
+const skew = (txt, cls) => '<span class="kbug ' + (cls || '') + '"><span>' + txt + '</span></span>';
+const gameTag = e => { const g = gameOf(e); return g ? g.away + ' at ' + g.home : ''; };
+const shortTime = t => U(fmt(t, {weekday: 'short'})) + ' ' + fmt(t, {hour: 'numeric', minute: '2-digit'});
 function gameLine(es) {
   const gs = es.map(gameOf).filter((g, i, a) => g && a.indexOf(g) === i).sort((a, b) => (a.t || 0) - (b.t || 0));
-  return gs.length ? '<div class="td-gm">' + gs.map(g => logo(g.away, 'xs') + '<span>' + esc(g.away + ' at ' + g.home) + '</span>' + logo(g.home, 'xs') + '<span class="mut">' + esc(dayTime(g.t)) + '</span>').join('<span class="td-gsep">+</span>') + '</div>' : '';
+  return gs.length ? '<div class="kgl">' + gs.map(g => '<span>' + esc(g.away + ' at ' + g.home) + ' · ' + esc(dayTime(g.t)) + '</span>').join('<span class="td-gsep">+</span>') + '</div>' : '';
 }
+function kTag(it) {
+  const L = {bet: 'BET', lean: 'LEAN', top: 'TOP 10', sgp: 'SGP', par: 'PARLAY'}[it.kind];
+  const r = it.c ? (it.c.wr ? ' #' + it.c.wr : '') : it.s ? ' #' + (it.i + 1) : '';
+  return '<span class="kchip ' + KIND[it.kind][1] + '">' + L + r + '</span>';
+}
+const oddsBox = (o, sub) => '<span class="kodds">' + skew('<b>' + odd(o) + '</b>') + (sub ? '<i>' + esc(sub) + '</i>' : '') + '</span>';
 function tdRow(it, withGame) {
-  const chip = '<span class="kchip ' + KIND[it.kind][1] + '">' + KIND[it.kind][0] + '</span>';
-  const gl = withGame ? gameLine(it.x ? it.x.legs.map(l => l.e) : [it.e]) : '';
+  const gl = withGame ? gameLine([it.e]) : '';
   if (it.c) {
-    const c = it.c;
-    return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + c.p) + '"' + pcAttrs(c.pid, c.m, c.dr, it.k) + '>' + tlogo(c.tm) +
-      '<div class="td-mid"><div class="td-nm"><b>' + esc(c.p) + '</b>' + chip + rowStatus(c, c.e, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).g, (gradeOf(c.p, c.dr, c.ln, c.m) || {}).a) + '</div><div class="td-ln">' + (withGame && c.wr ? '#' + c.wr + ' · ' : '') + esc(propLabel(c)) + ' · ' + esc([c.pos, book(c.bk)].filter(Boolean).join(' · ')) + '</div>' + gl + '</div>' +
-      '<div class="td-r"><b>' + odd(c.o) + '</b><span>V3 ' + pct(c.hp, 0) + '</span></div></div>';
+    const c = it.c, gr = gradeOf(c.p, c.dr, c.ln, c.m) || {};
+    return '<div class="krow pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + c.p) + '"' + pcAttrs(c.pid, c.m, c.dr, it.k) + '>' + badge(c.tm, 38) +
+      '<div class="kmid"><div class="knm"><b>' + esc(c.p) + '</b>' + kTag(it) + rowStatus(c, c.e, gr.g, gr.a) + '</div><div class="kln">' + esc(propLabel(c)) + ' · ' + esc([c.pos, book(c.bk)].filter(Boolean).join(' · ')) + '</div>' + gl + '</div>' +
+      oddsBox(c.o, 'V3 ' + pct(c.hp, 0)) + '</div>';
   }
   if (it.s) {
     const s = it.s;
-    return '<div class="td-row pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + s.p) + '"' + pcAttrs(s.pid, s.m, 'OVER', '') + '>' + tlogo(s.tm) +
-      '<div class="td-mid"><div class="td-nm"><b>' + esc(s.p) + '</b>' + chip + rowStatus(Object.assign({dr: 'OVER'}, s), s.e, s.g, s.a) + '</div><div class="td-ln">#' + (it.i + 1) + ' · ' + esc(lrMarket(s)) + ' · ' + esc(s.pos || '') + '</div>' + gl + '</div>' +
-      '<div class="td-r"><b>' + odd(s.o) + '</b><span>Score ' + esc(Math.round(s.score)) + '</span></div></div>';
+    return '<div class="krow pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + s.p) + '"' + pcAttrs(s.pid, s.m, 'OVER', '') + '>' + badge(s.tm, 38) +
+      '<div class="kmid"><div class="knm"><b>' + esc(s.p) + '</b>' + kTag(it) + rowStatus(Object.assign({dr: 'OVER'}, s), s.e, s.g, s.a) + '</div><div class="kln">' + esc(lrMarket(s)) + ' · ' + esc([s.pos, book(s.bk)].filter(Boolean).join(' · ')) + '</div>' + gl + '</div>' +
+      oddsBox(s.o, 'Score ' + Math.round(s.score)) + '</div>';
   }
-  const x = it.x, D = ticketDec(x), sg = it.kind === 'sgp', price = sg ? 1 + (D - 1) * 0.9 : D;
-  const tms = x.legs.map(l => l.tm).filter((t, i, a) => t && a.indexOf(t) === i).slice(0, 3);
-  const faces = '<span class="td-faces">' + tms.map(t => tlogo(t, 'sm')).join('') + '</span>';
-  const locked = x.legs.some(l => l.locked);
-  const inner = faces + '<div class="td-mid"><div class="td-nm"><b>' + esc(sg ? 'Same-game parlay' : x.legs.map(l => surname(l.p)).join(' + ')) + '</b>' + chip + ticketStatus(x) + '</div>' +
-    '<div class="td-ln">' + esc(x.legs.map(legShort).join(' · ')) + '</div>' + gl + '</div>' +
-    '<div class="td-r"><b>' + odd(amOf(price)) + '</b><span>' + (sg ? 'est. book' : x.legs.length + ' legs') + '</span></div>';
-  return locked ? '<div class="td-row">' + inner + '</div>'
-    : '<button type="button" class="td-row" data-act="lr-load" data-t="' + (sg ? 'g' : 'p') + '" data-i="' + it.i + '" aria-label="Load into my parlay">' + inner + '</button>';
+  return ticketBlock(it, withGame);
 }
-function gameBand(g, extra) {
-  const a = team(g.away), h = team(g.home), lg = liveGame(g);
-  const right = lg && lg.state !== 'pre' ? '<span class="td-score ' + (lg.state === 'in' ? 'live' : '') + '">' + esc(lg.as + '–' + lg.hs) + ' · ' + esc(lg.state === 'in' ? liveClock(lg) : 'Final') + '</span>' : '';
-  return '<div class="td-band" style="background:linear-gradient(90deg,' + a.color + 'D9 0%,var(--panel) 42%,var(--panel) 58%,' + h.color + 'D9 100%)">' + logo(g.away, 'md') +
-    '<div class="td-bt"><div class="td-gt">' + esc(g.away) + ' <i>at</i> ' + esc(g.home) + '</div><div class="td-gs">' + esc(dayTime(g.t)) + esc(vegasShort(g)) + (g.frozen ? ' · ' + 'locked' : '') + '</div></div>' +
-    right + (extra || '') + logo(g.home, 'md') + '</div>';
+function ticketBlock(it, withGame) {
+  const x = it.x, sg = it.kind === 'sgp', D = ticketDec(x), price = sg ? 1 + (D - 1) * 0.9 : D, locked = x.legs.some(l => l.locked);
+  const head = '<div class="kt-h">' + skew(sg ? 'Same-game parlay' : '2-leg parlay', 'grn') + ticketStatus(x) + '<span class="kt-p">' + odd(amOf(price)) + (sg ? '<i>est. book</i>' : '') + '</span></div>';
+  const legs = x.legs.map(l => '<div class="kt-l">' + badge(l.tm, 30) + '<div class="kmid"><div class="knm"><b>' + esc(l.p) + '</b>' + (l.g ? gradeChip(l.g, l.a) : '') + '</div><div class="kln">' +
+    esc(Math.ceil(l.ln) + '+ ' + (MSHORT[U(l.m)] || mkt(l.m).toLowerCase())) + (!sg ? ' · ' + esc(gameTag(l.e)) : '') + '</div></div><span class="kt-o">' + odd(l.o) + '</span></div>').join('');
+  const btn = locked ? '<div class="kt-lock">' + LOCK + ' Locked at kickoff</div>' : '<button type="button" class="kt-load" data-act="lr-load" data-t="' + (sg ? 'g' : 'p') + '" data-i="' + it.i + '">Load into my parlay</button>';
+  return '<div class="kt">' + head + legs + btn + '</div>';
 }
-function tdHero(items) {
-  const top = items.find(x => x.kind === 'top' && x.i === 0) || items.find(x => x.kind === 'bet') || items.find(x => x.kind === 'lean');
-  if (!top) return '';
-  const o = top.c || top.s, t = team(o.tm), isTop = !!top.s;
-  const attrs = top.c ? pcAttrs(o.pid, o.m, o.dr, top.k) : pcAttrs(o.pid, o.m, 'OVER', '');
-  const g = gameOf(o.e), meta = [o.pos, o.tm, o.op ? 'vs ' + o.op : '', g ? dayTime(g.t) : ''].filter(Boolean).join(' · ');
-  return '<section class="td-hero pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + o.p) + '"' + attrs + ' style="background:linear-gradient(115deg,' + t.color + ' 0%,' + t.color + '99 30%,var(--bg2) 78%)">' +
-    (espnFor(o.p, o.tm) || (top.c && o.hs) || sleeperFor(o.p, o.tm) ? '<img class="td-wm" src="' + esc(logoUrl(o.tm)) + '" alt="" loading="lazy" onerror="logoErr(this)">' : '') +
-    cut(o.p, o.tm, top.c ? o.hs : '', 'lg') +
-    '<div class="td-hb"><span class="kchip ' + (isTop ? 'k-top' : 'k-bet') + '">' + (isTop ? 'Top 10 · #1 this week' : 'Top V3 bet') + '</span>' +
-    '<div class="td-hn">' + esc(o.p) + '</div><div class="td-hm">' + esc(meta) + '</div>' +
-    '<div class="td-hl">' + esc(isTop ? lrMarket(o) : propLabel(o)) + '</div>' +
-    '<div class="td-ho"><b>' + odd(o.o) + '</b><span>' + esc(book(o.bk)) + (isTop ? ' · score ' + Math.round(o.score) : ' · V3 ' + pct(o.hp, 0)) + '</span></div></div></section>';
+function gameBand(g) {
+  const lg = liveGame(g), live = lg && lg.state !== 'pre';
+  const mid = live ? lg.as + '–' + lg.hs + ' · ' + (lg.state === 'in' ? liveClock(lg) : 'FINAL') : shortTime(g.t);
+  const v = vegasShort(g).replace(/^ · /, '');
+  return '<div class="kg-h"><i style="background:' + team(g.away).color + '"></i>' + badge(g.away, 32) + '<b class="kg-n"><span class="nf">' + esc(nick(g.away)) + '</span><span class="na">' + esc(g.away) + '</span></b>' +
+    skew(esc(mid), 'sm' + (lg && lg.state === 'in' ? ' live' : '')) + '<b class="kg-n r"><span class="nf">' + esc(nick(g.home)) + '</span><span class="na">' + esc(g.home) + '</span></b>' + badge(g.home, 32) + '<i style="background:' + team(g.home).color + '"></i></div>' +
+    (v || g.frozen ? '<div class="kg-v">' + esc([v, g.frozen ? 'Locked at kickoff' : ''].filter(Boolean).join(' · ')) + '</div>' : '');
+}
+const cdText = t => {
+  let s = Math.max(0, Math.round((t - Date.now()) / 1000));
+  const d = Math.floor(s / 86400); s %= 86400;
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60, p = v => String(v).padStart(2, '0');
+  return d ? d + 'd ' + h + 'h ' + p(m) + 'm' : h + ':' + p(m) + ':' + p(x);
+};
+setInterval(() => { const el = document.getElementById('cdown'); if (el) el.textContent = cdText(Number(el.dataset.t)); }, 1000);
+function lastWeekCells() {
+  const P = S.core.perf && S.core.perf.season, R = S.core.lr && S.core.lr.record;
+  const wk = P && !P.withheld ? (P.weeks || []).filter(x => x.s && isNum(x.s.u) && x.s.record) : [];
+  const v = wk[wk.length - 1];
+  const cell = (lab, rec, u) => '<div class="wb-c"><span>' + esc(lab) + '</span><b>' + esc(rec) + ' <em class="' + (u >= 0 ? 'pos' : 'neg') + '">' + lrU(u) + '</em></b></div>';
+  const a = v ? cell('V3 Bets & Leans · Week ' + v.w, String(v.s.record).replace(/-/g, '–'), v.s.u) : '<div class="wb-c"><span>V3 Bets &amp; Leans</span><b class="mut">No graded week yet</b></div>';
+  let b;
+  const fw = R && (R.weeks || []).filter(w => w.card && w.card.n);
+  if (fw && fw.length) { const w = fw[fw.length - 1]; b = cell('Top 10 · Week ' + w.week, lrRec(w.card), w.card.units); }
+  else if (R && R.backtest && R.backtest.byWeek && R.backtest.byWeek.length) { const w = R.backtest.byWeek[R.backtest.byWeek.length - 1]; b = cell('Top 10 · W' + w.week + ' backtest', w.card[0] + '–' + w.card[1], w.card[2]); }
+  else b = '<div class="wb-c"><span>Top 10</span><b class="mut">—</b></div>';
+  return a + b;
+}
+function weekBoard(games, n) {
+  const now = Date.now(), live = games.map(g => ({g: g, lg: liveGame(g)})).filter(x => x.lg && x.lg.state === 'in');
+  const next = games.find(g => isNum(g.t) && g.t > now);
+  let top;
+  if (live.length) {
+    const x = live[0];
+    top = '<div class="wb-mu">' + badge(x.g.away, 32) + badge(x.g.home, 32) + '</div><div class="wb-k"><span>Live now' + (live.length > 1 ? ' · ' + live.length + ' games' : '') + '</span><b>' + esc(x.g.away + ' ' + x.lg.as + ' · ' + x.g.home + ' ' + x.lg.hs) + '</b></div>' +
+      '<button type="button" class="kbug live big" data-view="live"><span>' + esc(liveClock(x.lg)) + '</span></button>';
+  } else if (next) {
+    top = '<div class="wb-mu">' + badge(next.away, 32) + badge(next.home, 32) + '</div><div class="wb-k"><span>Next kickoff</span><b>' + esc(next.away + ' at ' + next.home + ' · ' + fmt(next.t, {weekday: 'short'})) + '</b></div>' +
+      '<span class="kbug grn big"><span id="cdown" data-t="' + next.t + '">' + cdText(next.t) + '</span></span>';
+  } else top = '<div class="wb-k"><span>Week ' + esc(S.core.meta.week) + '</span><b>All games are final</b></div>';
+  const box = (id, v, lab) => '<button type="button" class="wb-n' + (S.tf === id ? ' on' : '') + '" data-act="tf" data-v="' + id + '"><b>' + v + '</b><span>' + lab + '</span></button>';
+  return '<section class="wb"><div class="wb-top">' + top + '</div><div class="wb-ns">' + box('bets', n.bets, 'Bets') + box('top', n.top, 'Top 10') + box('par', n.par, 'Parlays') + box('res', n.res, 'Research') + '</div>' +
+    '<div class="wb-last">' + lastWeekCells() + '</div></section>';
+}
+function lowerThird(games, total) {
+  const now = Date.now(), live = games.filter(g => { const lg = liveGame(g); return lg && lg.state === 'in'; }).length;
+  const next = games.find(g => isNum(g.t) && g.t > now);
+  const left = live ? live + (live === 1 ? ' game' : ' games') + ' in progress' : next ? fmt(next.t, {weekday: 'long'}) + ' kicks off ' + fmt(next.t, {hour: 'numeric', minute: '2-digit'}) : 'Week ' + S.core.meta.week + ' complete';
+  return '<div class="klt"><i></i><span>' + esc(left) + '</span><b>' + total + ' picks</b></div>';
 }
 const itemKick = it => it.x ? Math.min.apply(null, it.x.legs.map(l => (gameOf(l.e) || {}).t || Infinity)) : ((gameOf(it.e) || {}).t || Infinity);
 const itemDec = it => it.c ? decOf(it.c.o) : it.s ? decOf(it.s.o) : it.kind === 'sgp' ? 1 + (ticketDec(it.x) - 1) * 0.9 : ticketDec(it.x);
@@ -397,25 +448,25 @@ const sortBar = key => '<div class="td-sort" role="group" aria-label="Sort"><spa
   '<button type="button" class="' + (S[key] === o[0] ? 'on' : '') + '" aria-pressed="' + (S[key] === o[0]) + '" data-act="tdsort" data-k="' + key + '" data-v="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>';
 function listSection(title, sub, key, its) {
   if (!its.length) return '';
-  return '<section class="td-game td-list"><div class="td-sh"><div class="td-st"><b>' + esc(title) + '</b><span>' + esc(sub) + '</span></div>' + sortBar(key) + '</div>' +
+  return '<section class="kg klist"><div class="ksh">' + skew(esc(title), 'grn') + '<span class="ksub">' + esc(sub) + '</span>' + sortBar(key) + '</div>' +
     sortItems(its, S[key]).map(it => tdRow(it, true)).join('') + '</section>';
 }
 function crossParlays(its) {
-  return listSection('Cross-game parlays', its.length + ' two-leg parlays · legs from different games · tap one to load it into your parlay', 'sortP', its);
+  return listSection('Cross-game parlays', its.length + ' two-leg parlays · legs from different games', 'sortP', its);
 }
+const kday = txt => '<div class="kday">' + skew(esc(txt)) + '<i></i></div>';
 function viewToday() {
   const items = weekItems(), games = (S.core.games || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
   const s = S.core.sections, lr = S.core.lr && S.core.lr.current;
   const n = {bets: items.filter(x => x.kind === 'bet' || x.kind === 'lean').length, top: items.filter(x => x.kind === 'top').length,
     par: items.filter(x => x.kind === 'par' || x.kind === 'sgp').length, res: s.lowerRisk.length + s.longshot.length + s.watch.length};
-  const tile = (lab, v, cls) => '<div class="td-tile"><span>' + lab + '</span><b class="' + cls + '">' + v + '</b></div>';
-  const chip = (id, lab, cls) => '<button type="button" class="td-chip ' + (cls || '') + (S.tf === id ? ' on' : '') + '" data-act="tf" data-v="' + id + '">' + lab + '</button>';
-  let main = tdHero(items) +
-    '<div class="td-tiles">' + tile('Bets', n.bets, 'c-bet') + tile('Top 10', n.top, 'c-top') + tile('Parlays', n.par, 'c-par') + tile('Research', n.res, 'c-res') + '</div>' +
-    '<div class="td-ctl"><div class="td-chips">' + chip('all', 'All ' + (n.bets + n.top + n.par)) + chip('bets', 'Bets', 'k-bet') + chip('top', 'Top 10', 'k-top') + chip('par', 'Parlays', 'k-par') + chip('res', 'Research', 'k-res') + '</div>' +
-    (S.tf === 'res' ? '' : '<div class="seg td-mode" role="group" aria-label="Group picks"><button type="button" class="' + (S.tdMode === 'game' ? 'on' : '') + '" data-act="tdmode" data-v="game">By game</button><button type="button" class="' + (S.tdMode === 'list' ? 'on' : '') + '" data-act="tdmode" data-v="list">By list</button></div>') + '</div>';
+  const chip = (id, lab) => '<button type="button" class="ktab' + (S.tf === id ? ' on' : '') + '" data-act="tf" data-v="' + id + '"><span>' + lab + '</span></button>';
+  const mode = (id, lab) => '<button type="button" class="ktab mode' + (S.tdMode === id ? ' on' : '') + '" data-act="tdmode" data-v="' + id + '"><span>' + lab + '</span></button>';
+  let main = lowerThird(games, n.bets + n.top + n.par) + weekBoard(games, n) +
+    '<div class="kctl"><div class="ktabs">' + chip('all', 'All ' + (n.bets + n.top + n.par)) + chip('bets', 'Bets ' + n.bets) + chip('top', 'Top 10') + chip('par', 'Parlays ' + n.par) + '</div>' +
+    (S.tf === 'res' ? '<div class="ktabs two">' + chip('all', 'Back to picks') + '<span></span></div>' : '<div class="ktabs two">' + mode('game', 'By game') + mode('list', 'By list') + '</div>') + '</div>';
   if (S.tf === 'res') {
-    main += '<div class="td-research">' + viewWatchlist() +
+    main += kday('Research') + '<div class="td-research">' + viewWatchlist() +
       fold('lr', 'Lower Risk · Sunday Top 9', 'Alternate-line parlay legs ranked by L1. Check the real combined parlay price before using one.', s.lowerRisk.length, () => grid(s.lowerRisk) || '<div class="empty">No Lower Risk legs this week.</div>') +
       fold('j1', 'Longshot Plus · J1 Top 20', 'Research candidates ranked by J1. Tracked for learning, never a production BET or LEAN.', s.longshot.length, () => grid(s.longshot) || '<div class="empty">No Longshot Plus research candidates.</div>') +
       fold('watch', 'Watch', 'Straights waiting on price, status or data. Not official picks.', s.watch.length, () => grid(s.watch) || '<div class="empty">Nothing on watch right now.</div>') +
@@ -426,8 +477,8 @@ function viewToday() {
     const shown = items.filter(x => tfOk(x, S.tf)), of = k => shown.filter(x => k.indexOf(x.kind) >= 0);
     const b = of(['bet', 'lean']), nb = b.filter(x => x.kind === 'bet').length;
     main += listSection('V3 Bets & Leans', b.length + ' straights · ' + nb + ' BET · ' + (b.length - nb) + ' LEAN', 'sortB', b) +
-      listSection('Top 10 · light-role', 'Under-the-radar score, one prop per player · research forward test', 'sortT', of(['top'])) +
-      listSection('Same-game parlays', of(['sgp']).length + ' tickets · price shown is the combined odds less 10%', 'sortG', of(['sgp'])) +
+      listSection('Top 10 · light-role', 'Under-the-radar score · one prop per player', 'sortT', of(['top'])) +
+      listSection('Same-game parlays', of(['sgp']).length + ' tickets · combined odds less 10%', 'sortG', of(['sgp'])) +
       crossParlays(of(['par']));
     if (!shown.length) main += '<div class="empty">Nothing in this list on the current board.</div>';
   } else {
@@ -438,13 +489,13 @@ function viewToday() {
     games.forEach(function (g) {
       const its = byE[g.id];
       if (!its || !its.length) return;
-      its.sort((a, b) => order[a.kind] - order[b.kind]);
+      its.sort((a, b) => order[a.kind] - order[b.kind] || a.r - b.r);
       const day = fmt(g.t, {weekday: 'long'});
-      if (day !== last) { main += '<div class="td-day">' + esc(day) + '</div>'; last = day; }
-      main += '<section class="td-game">' + gameBand(g) + its.map(it => tdRow(it)).join('') + '</section>';
+      if (day !== last) { main += kday(day); last = day; }
+      main += '<section class="kg">' + gameBand(g) + its.map(it => tdRow(it)).join('') + '</section>';
     });
     const cross = shown.filter(x => x.kind === 'par');
-    if (cross.length) main += '<div class="td-day">All games</div>' + crossParlays(cross);
+    if (cross.length) main += kday('All games') + crossParlays(cross);
     if (!shown.length) main += '<div class="empty">Nothing in this list on the current board.</div>';
   }
   return '<div class="today"><div class="td-main">' + main + '</div><aside class="td-rail">' + liveRail(items, games) + '</aside></div>';
@@ -457,7 +508,7 @@ function loadLive(force) {
   S.liveLoading = true;
   call('nflpBoardGetLive', [], s => {
     S.liveLoading = false;
-    try { S.live = JSON.parse(s); S.liveErr = ''; } catch (e) { S.liveErr = 'Live stats could not be read.'; }
+    try { S.live = JSON.parse(s); S.liveErr = ''; recordHistory(); } catch (e) { S.liveErr = 'Live stats could not be read.'; }
     if (S.tab === 'live' || S.tab === 'today') render();
   }, e => { S.liveLoading = false; S.liveErr = String(e && e.message || e); if (S.tab === 'live') render(); });
 }
@@ -538,42 +589,94 @@ function trackedIn(eid) {
   return out.filter(x => { const k = x.pid + '|' + x.m + '|' + x.ln + '|' + x.kind; if (seen[k]) return false; seen[k] = true; return true; });
 }
 const KIND2 = Object.assign({slip: ['My parlay', 'k-par']}, KIND);
-function liveRow(pk, lg, compact) {
+/* Stat history for the live charts: one point per refresh, kept on this device for the current week. */
+let LH = {wk: null, d: {}};
+try { const t = JSON.parse(localStorage.getItem('nflp_lh') || 'null'); if (t && t.d) LH = t; } catch (e) {}
+const lhKey = (eid, pk) => eid + '|' + pk.pid + '|' + pk.m;
+function recordHistory() {
+  if (!S.live || !S.core) return;
+  const wk = S.core.meta.week;
+  if (LH.wk !== wk) LH = {wk: wk, d: {}};
+  (S.core.games || []).forEach(function (g) {
+    const lg = liveGame(g);
+    if (!lg || lg.state === 'pre') return;
+    const f = Math.round(gameFrac(lg) * 1000) / 1000;
+    trackedIn(g.id).forEach(function (pk) {
+      const cur = statFor(pk.m, livePlayer(pk.p, pk.tm));
+      if (!isNum(cur)) return;
+      const k = lhKey(g.id, pk), a = LH.d[k] || (LH.d[k] = []), last = a[a.length - 1];
+      if (last && f <= last[0]) { last[1] = Math.max(last[1], cur); return; }
+      a.push([f, cur]);
+      if (a.length > 160) a.splice(1, 1);
+    });
+  });
+  try { localStorage.setItem('nflp_lh', JSON.stringify(LH)); } catch (e) {}
+}
+function liveChart(pk, eid, lg, pr, h) {
+  const D = U(pk.dr), ln = D === 'YES' || D === 'NO' ? 0.5 : pk.ln, f = gameFrac(lg), cur = isNum(pr.cur) ? pr.cur : 0;
+  if (!isNum(ln)) return '';
+  const top = Math.max(ln * 1.25, cur * 1.1, 1), y = v => (h - 3 - v / top * (h - 10)).toFixed(1), X = v => (Math.min(1, v) * 300).toFixed(1);
+  const hist = ((LH.d || {})[lhKey(eid, pk)] || []).filter(p => p[0] < f);
+  const pts = [[0, 0]].concat(hist, [[f, cur]]).map(p => X(p[0]) + ',' + y(p[1])).join(' ');
+  const col = {hit: '#3DDC97', pace: '#3DDC97', behind: '#FF8A73', miss: '#5D6E7C', wait: '#5D6E7C'}[pr.cls] || '#3DDC97';
+  const ln1 = (x1, y1, x2, y2, st) => '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" ' + st + ' vector-effect="non-scaling-stroke"/>';
+  return '<svg class="kch" viewBox="0 0 300 ' + h + '" preserveAspectRatio="none" role="img" aria-label="' + esc(pk.p + ': ' + cur + ' so far against a line of ' + ln) + '" style="height:' + h + 'px">' +
+    [75, 150, 225].map(x => ln1(x, 2, x, h - 3, 'stroke="#16212B"')).join('') +
+    ln1(0, y(ln), 300, y(ln), 'stroke="#ECF1F4" stroke-dasharray="2 3"') +
+    ln1(0, y(0), 300, y(ln), 'stroke="#33465A" stroke-width="1.5" stroke-dasharray="5 4"') +
+    '<polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+    ln1(0, y(0), 300, y(0), 'stroke="#24323F"') + '</svg>';
+}
+function liveRow(pk, lg, compact, eid) {
   const pr = progress(pk, lg), label = KIND2[pk.kind][0] + (pk.rank ? ' #' + pk.rank : '');
-  return '<div class="lv-pick' + (compact ? ' sm' : '') + '"><div class="lv-top">' + cut(pk.p, pk.tm, '', 'md') +
-    '<div class="td-mid"><div class="td-nm"><b>' + esc(pk.p) + '</b></div><div class="td-ln">' + esc(label + ' · ' + propLabel(pk)) + '</div></div>' +
-    '<div class="lv-now"><b>' + (pr.cur === null ? '—' : esc(pr.cur)) + '</b><span class="lv-st ' + pr.cls + '">' + esc(pr.status) + '</span></div></div>' +
-    '<div class="lv-bar"><i class="' + pr.cls + '" style="width:' + (pr.fill * 100).toFixed(1) + '%"></i>' + (pr.cls === 'wait' ? '' : '<em style="left:' + (pr.tick * 100).toFixed(1) + '%"></em>') + '</div>' +
-    '<div class="lv-sub"><span>' + esc(pr.left) + '</span><span>' + esc(pr.right) + '</span></div></div>';
+  const D = U(pk.dr), ln = D === 'YES' || D === 'NO' ? 'TD' : pk.ln;
+  const started = lg && lg.state !== 'pre';
+  return '<div class="klv' + (compact ? ' sm' : '') + '"><div class="klv-t">' + badge(pk.tm, compact ? 30 : 38) +
+    '<div class="kmid"><div class="knm"><b>' + esc(pk.p) + '</b></div><div class="kln">' + esc(label + ' · ' + propLabel(pk)) + '</div></div>' +
+    '<div class="klv-n"><b>' + (pr.cur === null ? '—' : esc(pr.cur)) + '</b><span class="lv-st ' + pr.cls + '">' + esc(pr.status) + '</span></div></div>' +
+    (started && eid ? liveChart(pk, eid, lg, pr, compact ? 44 : 64) + '<div class="klv-ax"><span>Q1</span><span>Q2</span><span>Q3</span><span>Q4</span></div>' : '') +
+    '<div class="lv-sub"><span>' + esc(pr.left) + '</span><span>' + esc((pr.right ? pr.right + ' · ' : '') + 'Line ' + ln) + '</span></div></div>';
 }
 function liveMini(pk, lg) {
   const pr = progress(pk, lg), label = KIND2[pk.kind][0] + (pk.rank ? ' #' + pk.rank : '');
-  return '<div class="lv-mini">' + tlogo(pk.tm, 'sm') + '<div class="td-mid"><div class="td-nm"><b>' + esc(pk.p) + '</b></div><div class="td-ln">' + esc(label + ' · ' + propLabel(pk)) + '</div></div>' +
-    '<div class="lv-now"><b>' + (pr.cur === null ? '—' : esc(pr.cur)) + '</b><span class="lv-st ' + pr.cls + '">' + esc(pr.status) + '</span></div></div>';
+  return '<div class="kmini">' + badge(pk.tm, 30) + '<div class="kmid"><div class="knm"><b>' + esc(pk.p) + '</b></div><div class="kln">' + esc(label + ' · ' + propLabel(pk)) + '</div></div>' +
+    '<div class="klv-n"><b>' + (pr.cur === null ? '—' : esc(pr.cur)) + '</b><span class="lv-st ' + pr.cls + '">' + esc(pr.status) + '</span></div></div>';
 }
 function liveScore(g, lg, big) {
-  const a = team(g.away), h = team(g.home), st = lg.state === 'in' ? liveClock(lg) : lg.state === 'post' ? 'Final' : dayTime(g.t);
-  return '<div class="lv-head' + (big ? ' big' : '') + '" style="background:linear-gradient(100deg,' + a.color + ' 0%,var(--bg2) 46%,var(--bg2) 54%,' + h.color + ' 100%)">' +
-    '<div class="lv-tm">' + logo(g.away, big ? 'lg' : 'md') + '<b class="' + (lg.as >= lg.hs ? '' : 'mut') + '">' + esc(lg.as) + '</b></div>' +
-    '<div class="lv-mid"><span class="lv-clock ' + (lg.state === 'in' ? 'live' : '') + '">' + esc(st) + '</span>' + (lg.state === 'in' && lg.dd ? '<span>' + esc((lg.poss ? lg.poss + ' ball · ' : '') + lg.dd) + '</span>' : '') + '</div>' +
-    '<div class="lv-tm r"><b class="' + (lg.hs >= lg.as ? '' : 'mut') + '">' + esc(lg.hs) + '</b>' + logo(g.home, big ? 'lg' : 'md') + '</div></div>';
+  const st = lg.state === 'in' ? liveClock(lg) : lg.state === 'post' ? 'FINAL' : shortTime(g.t);
+  return '<div class="ksb' + (big ? ' big' : '') + '"><i style="background:' + team(g.away).color + '"></i>' + badge(g.away, big ? 48 : 32) +
+    '<b class="' + (lg.as >= lg.hs ? '' : 'mut') + '">' + esc(lg.as) + '</b>' + skew(esc(st), lg.state === 'in' ? 'grn' : '') +
+    '<b class="' + (lg.hs >= lg.as ? '' : 'mut') + '">' + esc(lg.hs) + '</b>' + badge(g.home, big ? 48 : 32) + '<i style="background:' + team(g.home).color + '"></i></div>' +
+    (lg.state === 'in' && lg.dd ? '<div class="ksb-dd">' + esc((lg.poss ? lg.poss + ' ball · ' : '') + lg.dd) + '</div>' : '');
 }
 function ticketsLive() {
   const lr = S.core.lr && S.core.lr.current;
   if (!lr) return '';
   const ts = lr.parlays.map((x, i) => ({x: x, lab: '2-leg parlay', i: i})).concat(lr.sgps.map((x, i) => ({x: x, lab: 'Same-game parlay', i: i})));
-  const live = ts.filter(t => t.x.legs.some(l => { const g = (S.core.games || []).find(y => y.id === l.e); const lg = liveGame(g); return lg && lg.state !== 'pre'; }));
+  const live = ts.filter(t => t.x.legs.some(l => { const lg = liveGame(gameOf(l.e)); return lg && lg.state !== 'pre'; }));
   if (!live.length) return '';
-  return '<div class="td-day">Parlays in play</div><div class="lv-grid">' + live.map(function (t) {
-    const legs = t.x.legs.map(l => { const g = (S.core.games || []).find(y => y.id === l.e); return {l: l, pr: progress(Object.assign({dr: 'OVER'}, l), liveGame(g))}; });
+  return kday('Parlays in play') + '<div class="lv-grid">' + live.map(function (t) {
+    const legs = t.x.legs.map(l => ({l: l, pr: progress(Object.assign({dr: 'OVER'}, l), liveGame(gameOf(l.e)))}));
     const hit = legs.filter(z => z.pr.cls === 'hit').length, dead = legs.some(z => z.pr.cls === 'miss');
-    return '<section class="td-game lv-ticket"><div class="lv-th"><b>' + esc(t.lab) + ' · ' + odd(amOf(ticketDec(t.x))) + '</b><span class="lv-st ' + (dead ? 'miss' : hit === legs.length ? 'hit' : 'pace') + '">' + (dead ? 'Lost' : hit + ' of ' + legs.length + ' hit') + '</span></div>' +
-      legs.map(z => '<div class="lv-leg"><span class="lv-ln">' + esc(legShort(z.l)) + '</span><div class="lv-bar thin"><i class="' + z.pr.cls + '" style="width:' + (z.pr.fill * 100).toFixed(1) + '%"></i>' + (z.pr.cls === 'wait' ? '' : '<em style="left:' + (z.pr.tick * 100).toFixed(1) + '%"></em>') + '</div><span class="lv-st ' + z.pr.cls + '">' + esc((z.pr.cur === null ? '' : z.pr.cur + ' · ') + z.pr.status) + '</span></div>').join('') + '</section>';
+    return '<section class="kg kt-live"><div class="kt-h">' + skew(esc(t.lab), 'grn') + '<span class="lv-st ' + (dead ? 'miss' : hit === legs.length ? 'hit' : 'pace') + '">' + (dead ? 'Lost' : hit + ' of ' + legs.length + ' hit') + '</span><span class="kt-p">' + odd(amOf(ticketDec(t.x))) + '</span></div>' +
+      legs.map(z => '<div class="lv-leg">' + badge(z.l.tm, 26) + '<span class="lv-ln">' + esc(legShort(z.l)) + '</span><div class="kseg">' + segs(z.pr) + '</div><span class="lv-st ' + z.pr.cls + '">' + esc((z.pr.cur === null ? '' : z.pr.cur + ' · ') + z.pr.status) + '</span></div>').join('') + '</section>';
   }).join('') + '</div>';
+}
+function segs(pr) {
+  const n = Math.round(pr.fill * 10), t = Math.round(pr.tick * 10);
+  let h = '';
+  for (let i = 0; i < 10; i++) h += '<i class="' + (i < n ? pr.cls : '') + (i === t - 1 ? ' ln' : '') + '"></i>';
+  return h;
+}
+function liveTicker(games) {
+  let on = 0, settled = 0;
+  games.forEach(g => { const lg = liveGame(g); if (!lg || lg.state === 'pre') return; const n = trackedIn(g.id).length; if (lg.state === 'in') on += n; else settled += n; });
+  const now = Date.now(), next = games.find(g => isNum(g.t) && g.t > now);
+  return '<div class="ktick">' + skew('Ticker', 'grn') + '<span>' + on + ' picks live · ' + settled + ' settled' + (next ? ' · next kickoff ' + esc(dayTime(next.t)) : '') + '</span></div>';
 }
 function viewLive() {
   const games = (S.core.games || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
-  let h = '<div class="lv-hdr"><h2>Live</h2><span class="mut">' + (S.live ? 'Updated ' + esc(clock(S.live.at)) + ' · refreshes every 45 sec' : S.liveLoading ? 'Loading scores…' : '') + '</span></div>';
+  let h = '<div class="khdr"><h2>Live</h2><span class="mut">' + (S.live ? 'Updated ' + esc(clock(S.live.at)) + ' · refreshes every 45 sec' : S.liveLoading ? 'Loading scores…' : '') + '</span></div>';
   if (S.liveErr) h += '<div class="warnbar"><div>Live stats unavailable: ' + esc(S.liveErr) + '</div></div>';
   const rows = games.map(g => ({g: g, lg: liveGame(g)}));
   const inPlay = rows.filter(x => x.lg && x.lg.state === 'in'), finals = rows.filter(x => x.lg && x.lg.state === 'post'), next = rows.filter(x => !x.lg || x.lg.state === 'pre');
@@ -581,33 +684,35 @@ function viewLive() {
   if (!inPlay.length) h += '<div class="empty">No games in progress right now.' + (next.length ? ' Next kickoff: ' + esc(next[0].g.away + ' at ' + next[0].g.home + ', ' + dayTime(next[0].g.t)) + '.' : '') + '</div>';
   inPlay.forEach(function (x) {
     const pk = trackedIn(x.g.id);
-    h += '<section class="td-game lv-game">' + liveScore(x.g, x.lg, true) +
-      (pk.length ? pk.map(p => liveRow(p, x.lg)).join('') : '<div class="lv-none">None of your picks are in this game.</div>') + '</section>';
+    h += '<section class="kg">' + liveScore(x.g, x.lg, true) + (pk.length ? pk.map(p => liveRow(p, x.lg, false, x.g.id)).join('') : '<div class="lv-none">None of your picks are in this game.</div>') + '</section>';
   });
   h += '</div>' + ticketsLive();
-  if (finals.length) h += '<div class="td-day">Final</div><div class="lv-grid">' + finals.map(x => { const pk = trackedIn(x.g.id);
+  if (finals.length) h += kday('Final') + '<div class="lv-grid">' + finals.map(x => { const pk = trackedIn(x.g.id);
     const hit = pk.filter(p => progress(p, x.lg).cls === 'hit').length;
-    return '<section class="td-game lv-game">' + liveScore(x.g, x.lg, false) + (pk.length ? '<div class="lv-fsum">' + hit + ' of ' + pk.length + ' hit</div>' + pk.map(p => liveMini(p, x.lg)).join('') : '<div class="lv-none">No picks in this game.</div>') + '</section>'; }).join('') + '</div>';
-  if (next.length) h += '<div class="td-day">Up next</div><section class="td-game">' + next.map(x => { const n = trackedIn(x.g.id).length;
-    return '<div class="lv-next">' + logo(x.g.away, 'sm') + logo(x.g.home, 'sm') + '<span class="lv-nt">' + esc(x.g.away + ' at ' + x.g.home) + '</span><span class="mut">' + (n ? n + (n === 1 ? ' pick' : ' picks') + ' · ' : '') + esc(dayTime(x.g.t)) + '</span></div>'; }).join('') + '</section>';
-  return h;
+    return '<section class="kg">' + liveScore(x.g, x.lg, false) + (pk.length ? '<div class="lv-fsum">' + hit + ' of ' + pk.length + ' hit</div>' + pk.map(p => liveMini(p, x.lg)).join('') : '<div class="lv-none">No picks in this game.</div>') + '</section>'; }).join('') + '</div>';
+  if (next.length) h += kday('Up next') + '<div class="knext">' + next.map(x => { const n = trackedIn(x.g.id).length;
+    return '<div class="knx">' + badge(x.g.away, 28) + badge(x.g.home, 28) + '<div><b>' + esc(x.g.away + ' at ' + x.g.home) + '</b><span>' + esc(dayTime(x.g.t)) + (n ? ' · ' + n + (n === 1 ? ' pick' : ' picks') : '') + '</span></div></div>'; }).join('') + '</div>';
+  return h + liveTicker(games);
 }
 function liveRail(items, games) {
   let h = '';
   const inPlay = games.map(g => ({g: g, lg: liveGame(g)})).filter(x => x.lg && x.lg.state === 'in');
   if (inPlay.length) {
     const x = inPlay[0], pk = trackedIn(x.g.id);
-    h += '<section class="td-game lv-game"><div class="td-raillab"><span class="lv-dot"></span>Live now' + (inPlay.length > 1 ? ' · ' + inPlay.length + ' games' : '') + '</div>' + liveScore(x.g, x.lg, false) +
-      pk.slice(0, 4).map(p => liveRow(p, x.lg, true)).join('') + '<button type="button" class="td-more" data-view="live">Open Live</button></section>';
+    h += '<section class="kg"><div class="ksh">' + skew('Live now' + (inPlay.length > 1 ? ' · ' + inPlay.length + ' games' : ''), 'red') + '</div>' + liveScore(x.g, x.lg, false) +
+      pk.slice(0, 3).map(p => liveRow(p, x.lg, true, x.g.id)).join('') + '<button type="button" class="td-more" data-view="live">Open Live</button></section>';
   }
+  const cross = items.filter(i => i.kind === 'par');
+  if (cross.length) h += '<section class="kg">' + ticketBlock(sortItems(cross, 'price')[0], true) + '</section>';
   const now = Date.now(), next = games.filter(g => !(g.t <= now)).slice(0, 5);
-  if (next.length) h += '<section class="td-game"><div class="td-raillab">Up next</div>' + next.map(g => { const n = items.filter(i => i.e === g.id).length;
-    return '<div class="lv-next">' + logo(g.away, 'sm') + logo(g.home, 'sm') + '<span class="lv-nt">' + esc(g.away + ' at ' + g.home) + '</span><span class="mut">' + (n ? n + ' · ' : '') + esc(dayTime(g.t)) + '</span></div>'; }).join('') + '</section>';
-  const P = S.core.perf && S.core.perf.week ? S.core.perf.week : null;
+  if (next.length) h += '<section class="kg"><div class="ksh">' + skew('Up next') + '</div>' + next.map(g => { const n = items.filter(i => i.e === g.id).length;
+    return '<div class="knx row">' + badge(g.away, 26) + badge(g.home, 26) + '<div><b>' + esc(g.away + ' at ' + g.home) + '</b><span>' + esc(dayTime(g.t)) + (n ? ' · ' + n + (n === 1 ? ' pick' : ' picks') : '') + '</span></div></div>'; }).join('') + '</section>';
   const R = S.core.lr && S.core.lr.record;
   if (R && R.total) {
-    const T = R.total;
-    h += '<section class="td-game td-pad"><div class="td-raillab">Light-role forward test</div><div class="td-rec"><div><b>' + (T.card.n ? lrRec(T.card) : '—') + '</b><span>Top 10</span></div><div><b>' + (T.parlays.n ? lrRec(T.parlays) : '—') + '</b><span>Parlays</span></div><div><b>' + (T.sgps.n ? lrRec(T.sgps) : '—') + '</b><span>Same-game</span></div></div>' +
+    const T = R.total, B = (R.backtest || {}).total || {};
+    const c = (o, b) => o && o.n ? lrRec(o) : b ? b.w + '–' + b.l : '—';
+    const lab = T.card && T.card.n ? 'Forward test' : 'Backtest W4–9';
+    h += '<section class="kg"><div class="ksh">' + skew('Light-role') + '<span class="ksub">' + lab + '</span></div><div class="krec"><div><b>' + c(T.card, B.card) + '</b><span>Top 10</span></div><div><b>' + c(T.parlays, B.parlays) + '</b><span>Parlays</span></div><div><b>' + c(T.sgps, B.sgps) + '</b><span>Same-game</span></div></div>' +
       '<button type="button" class="td-more" data-view="performance">All results</button></section>';
   }
   return h;
@@ -618,6 +723,7 @@ function render() {
   document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', !b.classList.contains('brand') && (b.dataset.view === S.tab || (!TABS[b.dataset.view] && b.dataset.view === S.view))));
   document.querySelectorAll('[data-act="mode"]').forEach(b => b.classList.toggle('on', (b.dataset.m === 'analyst') === S.analyst));
   $('sheetMode').textContent = S.analyst ? 'Simple view' : 'Analyst view';
+  if (S.core && $('wkbug')) $('wkbug').firstChild.textContent = 'Week ' + S.core.meta.week;
   const anyLive = !!(S.live && S.live.games && S.live.games.some(g => g.state === 'in'));
   document.querySelectorAll('[data-view="live"]').forEach(b => b.classList.toggle('islive', anyLive));
   if (!S.core) return;
@@ -1547,37 +1653,74 @@ function viewWatchlist() {
 
 /* ---------------- Games ---------------- */
 function viewGames() {
-  const games = S.core.games;
+  const games = (S.core.games || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
   if (!games.length) return '<div class="empty" style="margin-top:30px">No games published yet.</div>';
-  const g = games.find(x => x.id === S.game) || games[0];
-  const sec = g.sections;
-  let rail = '<aside class="rail" aria-label="Week slate"><div class="railh">Week ' + esc(S.core.meta.week) + ' slate · ' + games.length + ' games</div>' +
-    games.map(x => '<button class="gm' + (x.id === g.id ? ' on' : '') + '" type="button" data-act="game" data-id="' + esc(x.id) + '">' +
-      '<div class="gmr"><div class="gmt">' + logo(x.away, 'sm') + esc(x.away) + ' <i>@</i> ' + esc(x.home) + logo(x.home, 'sm') + '</div>' +
-      '<span class="act' + (x.sections.actionable.length ? '' : ' zero') + '">' + x.sections.actionable.length + ' action</span></div>' +
-      '<div class="gms">' + esc(dayTime(x.t)) + (x.frozen ? ' · Locked' : '') + esc(vegasShort(x)) + '</div></button>').join('') + '</aside>';
-  const a = team(g.away), hm = team(g.home);
-  const lock = g.frozen
-    ? '<span class="lock">' + LOCK + 'Locked at kickoff · last pre-kickoff build ' + esc(fullTime(g.builtAt)) + '</span>'
-    : '<span class="lock pre">Pregame · refreshes each build until kickoff</span>';
-  let main = '<section class="gh" aria-label="Selected game"><div class="band"><div style="flex:1;background:' + a.color + '"></div><div style="flex:1;background:' + hm.color + '"></div></div>' +
-    '<div class="ghin"><div class="mu"><div class="tc">' + logo(g.away, 'lg') + '</div><div><div class="code">' + esc(g.away) + '</div><div class="full">' + esc(a.name) + '</div></div>' +
-    '<span class="at">@</span><div><div class="code">' + esc(g.home) + '</div><div class="full">' + esc(hm.name) + '</div></div><div class="tc">' + logo(g.home, 'lg') + '</div></div>' +
-    '<div class="when"><b>' + esc(fullTime(g.t)) + '</b>' + lock + '</div></div>' +
-    vegasRow(g) +
-    '<div class="counts"><div class="cnt"><b class="pos">' + sec.actionable.length + '</b><span>Actionable</span></div><div class="cnt"><b>' + sec.review.length + '</b><span>Preferred review</span></div>' +
-    '<div class="cnt"><b>' + sec.lowerRisk.length + '</b><span>Lower Risk</span></div><div class="cnt"><b>' + comma(g.all) + '</b><span>Props evaluated</span></div></div></section>';
-  main += '<section class="sec"><div class="sh"><div><h3>Actionable Straights</h3><p>BET / LEAN lines in this game, ranked by Signal.</p></div></div>' +
-    (sec.actionable.length ? grid(sec.actionable) : '<div class="empty">No actionable Straights in this game.</div>') + '</section>';
-  main += '<section class="sec"><div class="sh"><div><h3>More in this game</h3></div></div>' +
+  if (S.gameOpen) { const g = games.find(x => x.id === S.game); if (g) return gamePage(g); }
+  const items = weekItems();
+  let h = '', last = '';
+  games.forEach(function (g) {
+    const day = fmt(g.t, {weekday: 'long'});
+    if (!last) { h += '<div class="kgts">'; last = day; }
+    const n = items.filter(i => i.e === g.id && i.kind !== 'par').length, lg = liveGame(g);
+    const right = lg && lg.state === 'in' ? '<span class="lv-st pace">' + esc(lg.as + '–' + lg.hs + ' · ' + liveClock(lg)) + '</span>' : lg && lg.state === 'post' ? '<span class="mut">Final ' + esc(lg.as + '–' + lg.hs) + '</span>' :
+      '<span class="' + (n ? 'pos' : 'dim') + '">' + (n ? n + (n === 1 ? ' pick' : ' picks') : 'No picks') + '</span>';
+    h += '<button type="button" class="kgt" data-act="game" data-id="' + esc(g.id) + '" aria-label="' + esc('Open ' + team(g.away).name + ' at ' + team(g.home).name) + '">' +
+      '<div class="kgt-h"><i style="background:' + team(g.away).color + '"></i><div class="kgt-m"><div>' + badge(g.away, 40) + '<b>' + esc(g.away) + '</b></div><span>AT</span><div>' + badge(g.home, 40) + '<b>' + esc(g.home) + '</b></div></div><i style="background:' + team(g.home).color + '"></i></div>' +
+      '<div class="kgt-f"><span>' + esc(dayTime(g.t)) + '</span>' + right + '</div></button>';
+  });
+  return '<div class="kgames">' + h + '</div></div>';
+}
+function gamePage(g) {
+  const a = team(g.away), hm = team(g.home), sec = g.sections, lg = liveGame(g);
+  const items = weekItems().filter(i => i.e === g.id && i.kind !== 'par');
+  const mid = lg && lg.state !== 'pre' ? lg.as + '–' + lg.hs + ' · ' + (lg.state === 'in' ? liveClock(lg) : 'FINAL') : fullTime(g.t);
+  let h = '<section class="kgp"><i class="l" style="background:' + a.color + '"></i><i class="r" style="background:' + hm.color + '"></i>' +
+    '<div class="kgp-top"><button type="button" class="kback" data-act="game-back" aria-label="Back to all games"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>' +
+    skew(esc(mid), lg && lg.state === 'in' ? 'grn' : '') + '</div>' +
+    '<div class="kgp-mu"><div>' + badge(g.away, 62) + '<b>' + esc(nick(g.away)) + '</b></div><span>AT</span><div>' + badge(g.home, 62) + '<b>' + esc(nick(g.home)) + '</b></div></div>' +
+    '<div class="kgp-s">' + (g.frozen ? LOCK + ' Locked at kickoff · last pre-kickoff build ' + esc(fullTime(g.builtAt)) : 'Pregame · refreshes each build until kickoff') + '</div></section>' + vegasRow(g);
+  h += '<div class="kgp-tabs"><span class="on">Picks · ' + items.length + '</span><button type="button" data-act="game-props" data-id="' + esc(g.id) + '">All props · ' + comma(g.all) + '</button></div>';
+  [g.away, g.home].forEach(function (t) {
+    const its = items.filter(i => i.kind !== 'sgp' && (i.c ? i.c.tm : i.s.tm) === t).sort((x, y) => ({bet: 0, lean: 1, top: 2}[x.kind] - {bet: 0, lean: 1, top: 2}[y.kind]) || x.r - y.r);
+    h += '<section class="kg"><div class="kteam"><i style="background:' + team(t).color + '"></i>' + badge(t, 28) + '<b>' + esc(team(t).name) + '</b><span>' + (its.length ? its.length + (its.length === 1 ? ' pick' : ' picks') : 'No picks') + '</span></div>' +
+      (its.length ? its.map(it => tdRow(it)).join('') : '<div class="lv-none">No V3 or Top 10 picks for this team.</div>') + '</section>';
+  });
+  items.filter(i => i.kind === 'sgp').forEach(it => { h += '<section class="kg">' + ticketBlock(it) + '</section>'; });
+  h += kday('More in this game') +
     fold('g-review', 'Preferred review', 'Lines V3 chose to judge for each player and market that don\'t clear the price gate. Ranked by Signal.', sec.review.length, () => grid(sec.review) || '<div class="empty">None.</div>') +
     fold('g-lr', 'Lower Risk legs', 'Easier alternate lines for parlays. Check the combined price.', sec.lowerRisk.length, () => grid(sec.lowerRisk) || '<div class="empty">None.</div>') +
     fold('g-j1', 'Longshot Plus · J1 top 5', 'Research only.', sec.longshot.length, () => grid(sec.longshot) || '<div class="empty">None.</div>') +
     fold('g-watch', 'Watch', 'Waiting on price, status or data.', sec.watch.length, () => grid(sec.watch) || '<div class="empty">None.</div>') +
     (S.core.watchlist && S.core.watchlist.entries ? (function () { const wl = S.core.watchlist.entries.filter(e => e.e === g.id);
       return fold('g-wl-' + g.id, 'Watchlist', 'Preferred Straights V3 has liked in this game this week, with what changed since.', wl.length, () => wl.length ? '<div class="wlist">' + wl.map(wlRow).join('') + '</div>' : '<div class="empty">None this week.</div>'); })() : '') +
-    '<button class="fold" type="button" data-act="game-props" data-id="' + esc(g.id) + '"><span class="t">Every prop in this game</span><span class="d">Opens All props filtered to ' + esc(g.away + ' @ ' + g.home) + '.</span><span class="c">' + comma(g.all) + '</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9AA8B4" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></section>';
-  return '<div class="layout">' + rail + '<div class="mainc">' + main + '</div></div>';
+    '<button class="fold" type="button" data-act="game-props" data-id="' + esc(g.id) + '"><span class="t">Every prop in this game</span><span class="d">Opens All props filtered to ' + esc(g.away + ' @ ' + g.home) + '.</span><span class="c">' + comma(g.all) + '</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9AA8B4" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>';
+  return '<div class="kgpage">' + h + '</div>';
+}
+/* Results header: cumulative units chart and one tile per list. */
+function resultsTop(all) {
+  const P = all.season;
+  if (!P || P.withheld) return '';
+  const wk = (P.weeks || []).filter(x => x.s && isNum(x.s.u));
+  let cum = 0;
+  const pts = wk.map(x => { cum += x.s.u; return {w: x.w, c: cum, u: x.s.u, rec: x.s.record}; });
+  let chart = '';
+  if (pts.length) {
+    const lo = Math.min(0, ...pts.map(p => p.c)), hi = Math.max(0.5, ...pts.map(p => p.c)), W = 320, H = 120;
+    const X = i => (i + 0.5) * W / pts.length, Y = v => (H - 10 - (v - lo) / (hi - lo) * (H - 22)).toFixed(1);
+    const line = pts.map((p, i) => X(i).toFixed(1) + ',' + Y(p.c)).join(' ');
+    chart = '<svg class="kch big" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="' + esc('Cumulative units by week, ' + lrU(cum) + ' after week ' + pts[pts.length - 1].w) + '">' +
+      '<line x1="0" y1="' + Y(0) + '" x2="' + W + '" y2="' + Y(0) + '" stroke="#24323F" vector-effect="non-scaling-stroke"/>' +
+      '<polygon points="' + X(0).toFixed(1) + ',' + Y(0) + ' ' + line + ' ' + X(pts.length - 1).toFixed(1) + ',' + Y(0) + '" fill="' + (cum >= 0 ? 'rgba(61,220,151,.12)' : 'rgba(255,138,115,.12)') + '"/>' +
+      '<polyline points="' + line + '" fill="none" stroke="' + (cum >= 0 ? '#3DDC97' : '#FF8A73') + '" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>' +
+      '<div class="kch-x" style="grid-template-columns:repeat(' + pts.length + ',minmax(0,1fr))">' + pts.map(p => '<span>W' + p.w + '<em class="' + (p.u >= 0 ? 'pos' : 'neg') + '">' + lrU(p.u) + '</em></span>').join('') + '</div>';
+  }
+  const o = P.official.all, R = S.core.lr && S.core.lr.record, T = R ? R.total || {} : {}, B = R && R.backtest ? R.backtest.total || {} : {};
+  const tile = (name, rec, u, sub, col) => '<section class="krt"><i style="background:' + col + '"></i><div><span>' + esc(name) + '</span><b>' + esc(rec) + ' <em class="' + (isNum(u) ? (u >= 0 ? 'pos' : 'neg') : 'dim') + '">' + (isNum(u) ? lrU(u) : '') + '</em></b><small>' + esc(sub) + '</small></div></section>';
+  const lrT = (name, k, col) => T[k] && T[k].n ? tile(name, lrRec(T[k]), T[k].units, 'Forward test · ' + T[k].weeks + (T[k].weeks === 1 ? ' week' : ' weeks'), col) :
+    B[k] ? tile(name, B[k].w + '–' + B[k].l, B[k].units, 'Backtest W4–9 · forward test pending', col) : tile(name, '—', null, 'No data yet', col);
+  return '<section class="kg kres"><div class="ksh">' + skew('V3 Bets & Leans · cumulative units', 'grn') + '<span class="ksub">Season to date</span></div>' +
+    '<div class="kres-b"><div class="kres-h"><b class="' + (isNum(o.u) && o.u < 0 ? 'neg' : 'pos') + '">' + (isNum(o.u) ? lrU(o.u) : '—') + '</b><span><em>' + esc(o.w + '–' + o.l) + '</em> ' + pct(o.hit) + '</span></div>' + (chart || '<div class="lv-none">No graded weeks yet.</div>') + '</div></section>' +
+    '<div class="krts">' + tile('V3 Bets & Leans', o.w + '–' + o.l, o.u, 'Season · ' + o.n + ' graded', '#3DDC97') + lrT('Top 10', 'card', '#E8B64C') + lrT('2-leg parlays', 'parlays', '#ECF1F4') + lrT('Same-game', 'sgps', '#5D6E7C') + '</div>';
 }
 
 /* ---------------- All props ---------------- */
@@ -1710,6 +1853,7 @@ function viewPerf() {
     h += '<div class="note bad"><b>Results withheld: the data needs review.</b><br>' + esc(P.issues.slice(0, 6).join(' | ')) + (P.issueCount > 6 ? ' (and ' + (P.issueCount - 6) + ' more)' : '') + '</div></section>';
     return h + panelsSection(P, true);
   }
+  h = h.replace('</div></div>', '</div></div>' + (S.period === 'season' ? '</section>' + resultsTop(all) + '<section class="sec">' : ''));
   const o = P.official.all;
   const offTotal = P.markets.straight.total.frozen, offPending = Math.max(0, offTotal - P.markets.straight.total.graded);
   const be = isNum(o.avg) ? (o.avg < 0 ? -o.avg / (-o.avg + 100) : 100 / (o.avg + 100)) : null;
@@ -1722,7 +1866,7 @@ function viewPerf() {
     '</div>';
   ((S.core.meta.snapshot || {}).warnings || []).forEach(w => { h += '<div class="note warn">' + esc(w) + '</div>'; });
   h += '</section>';
-  if (S.period === 'season') h += unitsTile(P) + fcTile(S.core.fcCheck) + ladderTile() + lrTile();
+  if (S.period === 'season') h += fcTile(S.core.fcCheck) + ladderTile() + lrTile();
   h += '<section class="sec"><div class="sh"><div><h3>By recommendation</h3></div></div>' +
     tbl(sumHead('Call') + '<tbody>' + sumRow('All official', P.official.all) + sumRow('BET', P.official.bet) + sumRow('LEAN', P.official.lean) + '</tbody>') +
     fold('off-list', 'Every official call', 'The original locked recommendations, oldest week first.', P.officialList.length, () =>
@@ -1936,7 +2080,7 @@ document.addEventListener('click', e => {
     S.slip = pr.map(j => { const l = c.legs[j]; return {pid: l.pid, p: l.p, tm: l.tm, op: l.op, pos: l.pos, e: l.e, m: l.m, dr: l.dr, ln: l.ln, o: isNum(l.o) ? (l.o > 0 ? '+' + l.o : String(l.o)) : '', bo: '', bk: book(l.bk), hp: l.hp}; });
     S.slipBook = ''; slipSave(); S.slipOpen = true; renderSlip(); return; }
   if (act === 'shop-del') { const c = shopCurrentCard(); if (!c) return; shopState(c).rows.splice(Number(a.dataset.i), 1); renderPC(); return; }
-  if (act === 'sub') { if (a.dataset.for === 'explore') S.exSub = a.dataset.v; else S.reSub = a.dataset.v; setTab(a.dataset.for); return; }
+  if (act === 'sub') { if (a.dataset.for === 'explore') { S.exSub = a.dataset.v; if (a.dataset.v === 'games') S.gameOpen = false; } else S.reSub = a.dataset.v; setTab(a.dataset.for); return; }
   if (act === 'tf') { S.tf = a.dataset.v; render(); return; }
   if (act === 'tdmode') { S.tdMode = a.dataset.v; saveToday(); render(); return; }
   if (act === 'tdsort') { S[a.dataset.k] = a.dataset.v; saveToday(); render(); return; }
@@ -1944,7 +2088,8 @@ document.addEventListener('click', e => {
   if (act === 'wl') { const k = a.dataset.k; S.wlOpen[k] = !S.wlOpen[k]; render(); return; }
   if (act === 'wlf') { S.wlf = a.dataset.f; render(); return; }
   if (act === 'fold') { const id = a.dataset.id; S.folds[id] = !S.folds[id]; render(); return; }
-  if (act === 'game') { S.game = a.dataset.id; S.folds['g-review'] = S.folds['g-lr'] = S.folds['g-j1'] = S.folds['g-watch'] = false; render(); return; }
+  if (act === 'game') { S.game = a.dataset.id; S.gameOpen = true; S.folds['g-review'] = S.folds['g-lr'] = S.folds['g-j1'] = S.folds['g-watch'] = false; render(); window.scrollTo(0, 0); return; }
+  if (act === 'game-back') { S.gameOpen = false; render(); window.scrollTo(0, 0); return; }
   if (act === 'game-props') { S.pf = Object.assign({}, S.pf, {chip:'all', game:a.dataset.id}); S.limit = 100; S.openRow = -1; setView('props'); return; }
   if (act === 'chip') { S.pf.chip = a.dataset.q; S.limit = 100; S.openRow = -1; render(); return; }
   if (act === 'sort') { const k = a.dataset.key; S.sort = {key:k, dir: S.sort.key === k ? -S.sort.dir : (k === 'p' || k === 'm' || k === 'st' ? 1 : -1)}; refreshTable(); return; }
@@ -1967,7 +2112,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { $('guide').classList.remove('open'); if (S.slipOpen) { S.slipOpen = false; renderSlip(); } else if (S.pc) { S.pc = null; renderPC(); } }
-  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr.row, .hero.pcopen, .td-row.pcopen, .td-hero')) { e.preventDefault(); e.target.click(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr.row, .hero.pcopen, .td-row.pcopen, .krow.pcopen')) { e.preventDefault(); e.target.click(); }
 });
 $('guide').addEventListener('click', e => { if (e.target === $('guide')) $('guide').classList.remove('open'); });
 let qTimer = null;
