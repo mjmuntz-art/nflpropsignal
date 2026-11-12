@@ -822,10 +822,10 @@ body.pc-open #slipfab{z-index:130}
 .kbug.red{background:#FF6B52;border-color:#FF6B52;color:#1A0603}
 .kbug.live{background:var(--mint);border-color:var(--mint);color:#04110B;cursor:pointer}
 .kbug.big>span{font-family:var(--disp);font-size:20px;font-weight:800;letter-spacing:.4px}
-/* round team badges (real ESPN dark logos inside) */
-.bdg{display:inline-flex;flex:none;align-items:center;justify-content:center;border-radius:50%;background:radial-gradient(circle at 50% 38%,color-mix(in srgb,var(--tc) 42%,#0E151C),#0A1015 78%);box-shadow:inset 0 0 0 2px var(--tr);overflow:hidden}
-.bdg img{width:74%;height:74%;object-fit:contain;display:block}
-.bdg.txt{background:var(--tc);color:#fff;font-family:var(--disp);font-weight:800}
+/* team logos (ESPN dark set), free-standing */
+.bdg{display:inline-flex;flex:none;align-items:center;justify-content:center}
+.bdg img{width:100%;height:100%;object-fit:contain;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))}
+.bdg.txt{background:var(--tc);color:#fff;font-family:var(--disp);font-weight:800;transform:skewX(var(--sk));width:auto!important;padding:0 6px;height:auto!important;line-height:1.6}
 /* lower third */
 .klt{display:flex;align-items:stretch;height:32px;background:var(--panel);border:1px solid var(--line);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#C4CED6}
 .klt i{width:11px;background:var(--mint)}
@@ -952,7 +952,7 @@ body.pc-open #slipfab{z-index:130}
 .krec b{display:block;font-family:var(--disp);font-style:italic;font-weight:800;font-size:24px}
 .krec span{font-size:11px;color:var(--ink2)}
 /* explore · games */
-.kgames{margin-top:6px;display:flex;flex-direction:column;gap:10px}
+.kgames{margin-top:14px;display:flex;flex-direction:column;gap:10px}
 .kgts{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
 .kgt{background:var(--panel);border:1px solid var(--line);color:inherit;padding:0;text-align:left;cursor:pointer;display:flex;flex-direction:column}
 .kgt:hover{border-color:var(--line2)}
@@ -1099,7 +1099,7 @@ body.pc-open #slipfab{z-index:130}
 <div id="slipfab"></div>
 <div class="slipwrap" id="slip"></div>
 
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
