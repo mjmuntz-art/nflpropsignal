@@ -619,20 +619,59 @@ function recordHistory() {
   });
   try { localStorage.setItem('nflp_lh', JSON.stringify(LH)); } catch (e) {}
 }
+/* Play-by-play steps for one pick: [[gameFraction, runningTotal, label], ...] from the server's event string. */
+const EV_D = {r: y => ({ra: 1, ry: y}), c: y => ({rec: 1, rcy: y, tg: 1}), i: () => ({tg: 1}), P: y => ({pc: 1, pa: 1, py: y}), A: () => ({pa: 1}), X: () => ({pa: 1, int: 1})};
+const nI = v => Number.isInteger(v) ? String(v) : n1(v);
+const EV_L = {r: 'carry', c: 'catch', i: 'target', P: 'completion', A: 'incompletion', X: 'interception'};
+function playSteps(pk, f) {
+  const st = livePlayer(pk.p, pk.tm);
+  if (!st || !st.e) return null;
+  const acc = {}, out = [];
+  let prev = statFor(pk.m, {s: acc}) || 0;
+  String(st.e).split('|').forEach(function (x) {
+    const a = x.split(' '), fn = EV_D[a[1]];
+    if (!fn || a.length < 3) return;
+    const t = Math.min(1, (Number(a[0]) || 0) / 3600);
+    if (t > f + 0.001) return;
+    const td = /t$/.test(a[2]), y = Number(String(a[2]).replace('t', '')) || 0, d = fn(y);
+    if (td) { if (a[1] === 'r') d.rtd = 1; else if (a[1] === 'c') d.rctd = 1; else if (a[1] === 'P') d.ptd = 1; }
+    Object.keys(d).forEach(k => { acc[k] = (acc[k] || 0) + d[k]; });
+    const v = statFor(pk.m, {s: acc});
+    if (!isNum(v) || v === prev) return;
+    const q = Math.min(5, Math.floor((Number(a[0]) || 0) / 900) + 1), left = 900 - (Number(a[0]) || 0) % 900;
+    out.push([t, v, (q > 4 ? 'OT' : 'Q' + q) + ' ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') + ' · ' + EV_L[a[1]] + (v > prev ? ' +' : ' ') + nI(v - prev) + (td ? ', TD' : '') + ' → ' + nI(v)]);
+    prev = v;
+  });
+  return out;
+}
 function liveChart(pk, eid, lg, pr, h) {
   const D = U(pk.dr), ln = D === 'YES' || D === 'NO' ? 0.5 : pk.ln, f = gameFrac(lg), cur = isNum(pr.cur) ? pr.cur : 0;
   if (!isNum(ln)) return '';
-  const top = Math.max(ln * 1.25, cur * 1.1, 1), y = v => (h - 3 - v / top * (h - 10)).toFixed(1), X = v => (Math.min(1, v) * 300).toFixed(1);
-  const hist = ((LH.d || {})[lhKey(eid, pk)] || []).filter(p => p[0] < f);
-  const pts = [[0, 0]].concat(hist, [[f, cur]]).map(p => X(p[0]) + ',' + y(p[1])).join(' ');
+  const steps = playSteps(pk, f);
+  const lo = Math.min(0, ...(steps || []).map(s => s[1])), top = Math.max(ln * 1.25, cur * 1.1, ...(steps || []).map(s => s[1] * 1.1), 1);
+  const y = v => (h - 3 - (v - lo) / (top - lo) * (h - 10)).toFixed(1), X = v => (Math.min(1, v) * 300).toFixed(1);
   const col = {hit: '#3DDC97', pace: '#3DDC97', behind: '#FF8A73', miss: '#5D6E7C', wait: '#5D6E7C'}[pr.cls] || '#3DDC97';
   const ln1 = (x1, y1, x2, y2, st) => '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" ' + st + ' vector-effect="non-scaling-stroke"/>';
-  return '<svg class="kch" viewBox="0 0 300 ' + h + '" preserveAspectRatio="none" role="img" aria-label="' + esc(pk.p + ': ' + cur + ' so far against a line of ' + ln) + '" style="height:' + h + 'px">' +
+  let path, dots = '';
+  if (steps) {
+    /* Flat between plays, a jump at each one; a final jump if the box score is ahead of the plays read so far. */
+    let v = 0, d = 'M0,' + y(0);
+    steps.forEach(function (s) { d += ' H' + X(s[0]) + ' V' + y(s[1]); v = s[1]; });
+    if (cur !== v) d += ' H' + X(f) + ' V' + y(cur);
+    d += ' H' + X(f);
+    path = '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+    dots = steps.map(s => '<line x1="' + X(s[0]) + '" y1="' + y(s[1]) + '" x2="' + X(s[0]) + '" y2="' + y(s[1]) + '" stroke="' + col + '" stroke-width="6" stroke-linecap="round" vector-effect="non-scaling-stroke"><title>' + esc(s[2]) + '</title></line>').join('');
+  } else {
+    /* Older feed without plays: points saved on this device at each refresh. */
+    const hist = ((LH.d || {})[lhKey(eid, pk)] || []).filter(p => p[0] < f);
+    path = '<polyline points="' + [[0, 0]].concat(hist, [[f, cur]]).map(p => X(p[0]) + ',' + y(p[1])).join(' ') + '" fill="none" stroke="' + col + '" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+  }
+  const last = steps && steps.length ? steps[steps.length - 1][2] : '';
+  return '<svg class="kch" viewBox="0 0 300 ' + h + '" preserveAspectRatio="none" role="img" aria-label="' + esc(pk.p + ': ' + cur + ' so far against a line of ' + ln + (steps ? ', ' + steps.length + ' plays' + (last ? '; last: ' + last : '') : '')) + '" style="height:' + h + 'px">' +
     [75, 150, 225].map(x => ln1(x, 2, x, h - 3, 'stroke="#16212B"')).join('') +
     ln1(0, y(ln), 300, y(ln), 'stroke="#ECF1F4" stroke-dasharray="2 3"') +
     ln1(0, y(0), 300, y(ln), 'stroke="#33465A" stroke-width="1.5" stroke-dasharray="5 4"') +
-    '<polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
-    ln1(0, y(0), 300, y(0), 'stroke="#24323F"') + '</svg>';
+    ln1(0, y(0), 300, y(0), 'stroke="#24323F"') + path + dots + '</svg>';
 }
 function liveRow(pk, lg, compact, eid) {
   const pr = progress(pk, lg), label = KIND2[pk.kind][0] + (pk.rank ? ' #' + pk.rank : '');
