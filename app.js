@@ -508,7 +508,14 @@ function loadLive(force) {
   S.liveLoading = true;
   call('nflpBoardGetLive', [], s => {
     S.liveLoading = false;
-    try { S.live = JSON.parse(s); S.liveErr = ''; recordHistory(); } catch (e) { S.liveErr = 'Live stats could not be read.'; }
+    try {
+      const j = typeof s === 'string' ? JSON.parse(s) : s;
+      if (j && j.ok === false) {
+        /* Keep the last good scores on screen and say why this read failed; the next poll retries. */
+        S.liveErr = 'ESPN feed did not answer' + (j.err ? ' (' + j.err + ')' : '') + '. Retrying.';
+        if (!S.live || !(S.live.games || []).length) S.live = j;
+      } else { S.live = j; S.liveErr = ''; recordHistory(); }
+    } catch (e) { S.liveErr = 'Live stats could not be read.'; }
     if (S.tab === 'live' || S.tab === 'today') render();
   }, e => { S.liveLoading = false; S.liveErr = String(e && e.message || e); if (S.tab === 'live') render(); });
 }
