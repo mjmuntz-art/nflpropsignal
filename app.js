@@ -506,7 +506,7 @@ function viewToday() {
 /* ---- live stats ---- */
 function loadLive(force) {
   if (S.liveLoading) return;
-  if (!force && !liveWindow()) return;
+  if (!force && !liveWindow() && !needFinals()) return;
   S.liveLoading = true;
   call('nflpBoardGetLive', [], s => {
     S.liveLoading = false;
@@ -516,10 +516,17 @@ function loadLive(force) {
         /* Keep the last good scores on screen and say why this read failed; the next poll retries. */
         S.liveErr = 'ESPN feed did not answer' + (j.err ? ' (' + j.err + ')' : '') + '. Retrying.';
         if (!S.live || !(S.live.games || []).length) S.live = j;
-      } else { S.live = j; S.liveErr = ''; recordHistory(); }
+      } else { S.live = j; S.liveErr = ''; S.liveOnce = true; recordHistory(); }
     } catch (e) { S.liveErr = 'Live stats could not be read.'; }
     if (S.tab === 'live' || S.tab === 'today') render();
   }, e => { S.liveLoading = false; S.liveErr = String(e && e.message || e); if (S.tab === 'live') render(); });
+}
+/* Finished games this week are shown from ESPN's final box score until the official grading runs,
+   so read the feed once per visit even outside the live window. */
+function needFinals() {
+  if (S.liveOnce) return false;
+  const now = Date.now();
+  return (S.core && S.core.games || []).some(g => isNum(g.t) && g.t <= now && g.t >= now - 6 * 86400000);
 }
 function liveWindow() {
   const now = Date.now();
