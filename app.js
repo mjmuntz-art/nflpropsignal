@@ -353,6 +353,8 @@ function kTag(it) {
   const r = it.c ? (it.c.wr ? ' #' + it.c.wr : '') : it.s ? ' #' + (it.i + 1) : '';
   return '<span class="kchip ' + KIND[it.kind][1] + '">' + L + r + '</span>';
 }
+/* LR_FLOOR_V1 shadow challenger would drop this pick (book receptions line 0.5). */
+const fcChip = l => l && l.fc ? '<span class="kchip k-fc" title="Floor challenger drops this pick: the book\'s receptions line is 0.5, priced for one catch at most.">Floor cut</span>' : '';
 const oddsBox = (o, sub) => '<span class="kodds">' + skew('<b>' + odd(o) + '</b>') + (sub ? '<i>' + esc(sub) + '</i>' : '') + '</span>';
 function tdRow(it, withGame) {
   const gl = withGame ? gameLine([it.e]) : '';
@@ -365,7 +367,7 @@ function tdRow(it, withGame) {
   if (it.s) {
     const s = it.s;
     return '<div class="krow pcopen" role="button" tabindex="0" aria-label="' + esc('Open player view: ' + s.p) + '"' + pcAttrs(s.pid, s.m, 'OVER', '') + '>' + badge(s.tm, 38) +
-      '<div class="kmid"><div class="knm"><b>' + esc(s.p) + '</b>' + kTag(it) + rowStatus(Object.assign({dr: 'OVER'}, s), s.e, s.g, s.a) + '</div><div class="kln">' + esc(lrMarket(s)) + ' · ' + esc([s.pos, book(s.bk)].filter(Boolean).join(' · ')) + '</div>' + gl + '</div>' +
+      '<div class="kmid"><div class="knm"><b>' + esc(s.p) + '</b>' + kTag(it) + fcChip(s) + rowStatus(Object.assign({dr: 'OVER'}, s), s.e, s.g, s.a) + '</div><div class="kln">' + esc(lrMarket(s)) + ' · ' + esc([s.pos, book(s.bk)].filter(Boolean).join(' · ')) + '</div>' + gl + '</div>' +
       oddsBox(s.o, 'Score ' + Math.round(s.score)) + '</div>';
   }
   return ticketBlock(it, withGame);
@@ -373,7 +375,7 @@ function tdRow(it, withGame) {
 function ticketBlock(it, withGame) {
   const x = it.x, sg = it.kind === 'sgp', D = ticketDec(x), price = sg ? 1 + (D - 1) * 0.9 : D, locked = x.legs.some(l => l.locked);
   const head = '<div class="kt-h">' + skew(sg ? 'Same-game parlay' : '2-leg parlay', 'grn') + ticketStatus(x) + '<span class="kt-p">' + odd(amOf(price)) + (sg ? '<i>est. book</i>' : '') + '</span></div>';
-  const legs = x.legs.map(l => '<div class="kt-l">' + badge(l.tm, 30) + '<div class="kmid"><div class="knm"><b>' + esc(l.p) + '</b>' + (l.g ? gradeChip(l.g, l.a) : '') + '</div><div class="kln">' +
+  const legs = x.legs.map(l => '<div class="kt-l">' + badge(l.tm, 30) + '<div class="kmid"><div class="knm"><b>' + esc(l.p) + '</b>' + fcChip(l) + (l.g ? gradeChip(l.g, l.a) : '') + '</div><div class="kln">' +
     esc(Math.ceil(l.ln) + '+ ' + (MSHORT[U(l.m)] || mkt(l.m).toLowerCase())) + (!sg ? ' · ' + esc(gameTag(l.e)) : '') + '</div></div><span class="kt-o">' + odd(l.o) + '</span></div>').join('');
   const btn = locked ? '<div class="kt-lock">' + LOCK + ' Locked at kickoff</div>' : '<button type="button" class="kt-load" data-act="lr-load" data-t="' + (sg ? 'g' : 'p') + '" data-i="' + it.i + '">Load into my parlay</button>';
   return '<div class="kt">' + head + legs + btn + '</div>';
@@ -1485,14 +1487,14 @@ const lrMarket = l => dirWord('OVER') + ' ' + l.ln + ' ' + mkt(l.m);
 function lrLegLine(l, extra) {
   const tag = l.kind === 'milestone' ? 'milestone · ' + Math.round(l.ln / l.ml * 100) + '% of ' + l.ml + ' main' : 'main line';
   return '<div class="lleg"><div><b' + pcAttrs(l.pid, l.m, 'OVER', '') + ' style="cursor:pointer">' + esc(l.p) + '</b> <span class="mut">' + esc([l.tm, l.pos].filter(Boolean).join(' · ')) + '</span>' +
-    (l.locked ? ' <span class="mut">· ' + LOCK + ' locked</span>' : '') + lrRes(l.g) +
+    (l.locked ? ' <span class="mut">· ' + LOCK + ' locked</span>' : '') + lrRes(l.g) + fcChip(l) +
     '<div class="mut" style="font-size:12px">' + esc(lrMarket(l)) + ' <span class="dim">(' + esc(tag) + ')</span>' + (isNum(l.a) ? ' · actual <b>' + esc(l.a) + '</b>' : '') + (extra || '') + '</div></div>' +
     '<div class="r"><b>' + odd(l.o) + '</b><span class="mut" style="display:block;font-size:11px">' + esc(book(l.bk)) + (isNum(l.hp) ? ' · V3 ' + pct(l.hp, 0) : '') + '</span></div></div>';
 }
 function lrCardLine(s, i, label) {
   const why = [isNum(s.cleared) ? 'cleared ' + Math.round(s.cleared * 100) + '% of ' + s.games + ' games' : 'no earlier games', isNum(s.avg) ? 'avg ' + s.avg : '', isNum(s.ou) ? 'O/U ' + s.ou : ''].filter(Boolean).join(' · ');
   return '<div class="lleg"><div style="display:flex;align-items:center"><span class="lrrank">' + (label || i + 1) + '</span><div><b' + pcAttrs(s.pid, s.m, 'OVER', '') + ' style="cursor:pointer">' + esc(s.p) + '</b> <span class="mut">' + esc([s.tm, s.pos].filter(Boolean).join(' · ')) + (s.op ? ' vs ' + esc(s.op) : '') + '</span>' +
-    (s.locked ? ' <span class="mut">· ' + LOCK + ' locked</span>' : '') + lrRes(s.g) +
+    (s.locked ? ' <span class="mut">· ' + LOCK + ' locked</span>' : '') + lrRes(s.g) + fcChip(s) +
     '<div class="mut" style="font-size:12px">' + esc(lrMarket(s)) + (isNum(s.a) ? ' · actual <b>' + esc(s.a) + '</b>' : '') + '</div>' +
     '<div class="dim" style="font-size:11px">Score ' + esc(Math.round(s.score)) + ' · ' + esc(why) + '</div></div></div>' +
     '<div class="r"><b>' + odd(s.o) + '</b><span class="mut" style="display:block;font-size:11px">' + esc(book(s.bk)) + '</span></div></div>';
@@ -1506,7 +1508,7 @@ function lrTicket(t, i, kind) {
   const res = t.res ? lrRes(t.res) + (t.res === 'W' || t.res === 'L' ? ' <span class="mut">' + lrU(t.units) + '</span>' : '') : '';
   const lockedAny = t.legs.some(l => l.locked);
   return '<div class="lpair"><div class="lph">' + head + res +
-    (lockedAny ? '' : '<button class="ghost" type="button" data-act="lr-load" data-t="' + kind + '" data-i="' + i + '">Load into my parlay</button>') + '</div>' +
+    (lockedAny || i < 0 ? '' : '<button class="ghost" type="button" data-act="lr-load" data-t="' + kind + '" data-i="' + i + '">Load into my parlay</button>') + '</div>' +
     t.legs.map(l => lrLegLine(l)).join('') + '</div>';
 }
 function viewLightRole() {
@@ -1526,6 +1528,7 @@ function viewLightRole() {
     () => c.parlays.length ? c.parlays.map((t, i) => lrTicket(t, i, 'p')).join('') : '<div class="empty">No qualifying pairs on the current board.</div>');
   h += fold('lr-sgps', 'Same-game parlays', 'Same legs, one per game, at most two from one team. Graded at the combined price less 10%. Load one into your parlay and type the book\'s real same-game price to check it.', c.sgps.length,
     () => c.sgps.length ? c.sgps.map((t, i) => lrTicket(t, i, 'g')).join('') : '<div class="empty">No qualifying same-game parlays on the current board.</div>');
+  h += lrFloorBlock(L);
   if (c.next && c.next.length) h += fold('lr-next', 'Next on the list', 'Players ranked just below the top 10 (not part of the test).', c.next.length, () =>
     '<div class="lpair lrcard">' + c.next.map((s, i) => lrCardLine(s, i, s.rank)).join('') + '</div>');
   return h + '</section>';
@@ -1541,7 +1544,29 @@ function lrTile() {
   const rows = (R.weeks || []).map(w => '<tr><td>W' + w.week + '</td><td class="r num">' + cell(w.card) + '</td><td class="r num">' + cell(w.parlays) + '</td><td class="r num">' + cell(w.sgps) + '</td></tr>').join('');
   const brows = (B.byWeek || []).map(w => '<tr class="dim"><td>W' + w.week + ' <span class="mut">backtest</span></td><td class="r num">' + bcell(w.card) + '</td><td class="r num">' + bcell(w.parlays) + '</td><td class="r num">' + bcell(w.sgps) + '</td></tr>').join('');
   h += tbl('<thead><tr><th>Week</th><th class="r">Top 10</th><th class="r">2-leg parlays</th><th class="r">Same-game</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4" class="mut">No forward weeks graded yet.</td></tr>') + brows + '</tbody>');
+  h += lrFloorCompare(S.core.lr);
   return h + '</section>';
+}
+/* LR_FLOOR_V1 shadow challenger: same rule minus players whose book receptions line is 0.5. */
+function lrFloorCompare(L) {
+  const F = L && L.floor;
+  if (!F) return '';
+  const R = L.record || {}, T = R.total || {}, B = (R.backtest || {}).total || {}, FT = (F.record || {}).total || {}, FB = (F.backtest || {}).total || {};
+  const cell = (o, bt) => o && o.n ? lrRec(o) + ' <span class="' + (o.units >= 0 ? 'pos' : 'neg') + '">' + lrU(o.units) + '</span>' : bt && bt.n ? '<span class="dim">' + lrRec(bt) + ' ' + lrU(bt.units) + ' bt</span>' : '—';
+  const row = (name, k) => '<tr><td>' + name + '</td><td class="r num">' + cell(T[k], B[k]) + '</td><td class="r num">' + cell(FT[k], FB[k]) + '</td></tr>';
+  return '<div class="dl" style="margin-top:16px">Floor challenger · ' + esc(F.rule) + '</div>' +
+    '<p class="mut" style="font-size:12px;margin:2px 0 6px">Shadow test from Week ' + esc(R.firstForwardWeek) + ': the same rule after dropping players whose book receptions line is 0.5. It never changes the live list. "bt" = Weeks 4–9 backtest, shown until forward weeks are graded. Both graded the same way: a player missing from the box score counts as 0 unless he was ruled out.</p>' +
+    tbl('<thead><tr><th></th><th class="r">Live rule</th><th class="r">Floor rule</th></tr></thead><tbody>' + row('Top 10', 'card') + row('2-leg parlays', 'parlays') + row('Same-game', 'sgps') + '</tbody>');
+}
+function lrFloorBlock(L) {
+  const F = L && L.floor;
+  if (!F || !F.current) return '';
+  const c = F.current, cut = (L.current.card || []).filter(s => s.fc).length;
+  return '<div style="margin-top:14px"></div>' + lrFloorCompare(L) +
+    fold('lr-floor', 'Floor challenger picks this week', (cut ? cut + ' of this week\'s top 10 would be cut. ' : 'None of this week\'s top 10 would be cut. ') + 'Its own top 10, parlays and same-game parlays, built and locked the same way.', c.card.length + c.parlays.length + c.sgps.length,
+      () => (c.card.length ? '<div class="lpair lrcard">' + c.card.map((s, i) => lrCardLine(s, i)).join('') + '</div>' : '<div class="empty">No picks.</div>') +
+        (c.parlays.length ? '<div class="dl" style="margin-top:12px">2-leg parlays</div>' + c.parlays.map(t => lrTicket(t, -1, 'p')).join('') : '') +
+        (c.sgps.length ? '<div class="dl" style="margin-top:12px">Same-game parlays</div>' + c.sgps.map(t => lrTicket(t, -1, 'g')).join('') : ''));
 }
 
 /* ---------------- Units by week (Performance) ---------------- */
